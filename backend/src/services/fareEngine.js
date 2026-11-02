@@ -2,10 +2,10 @@
  * Motor de Tarifas Dinámicas - Cumplimiento Ley 26271
  *
  * Reglas de la Ley 26271 (Pasaje Universitario y Escolar):
- * - El pasaje universitario y escolar es el 50% del pasaje adulto (tarifa configurable en BD).
+ * - La tarifa universitaria acreditada es el 50% de la tarifa normal (configurable en BD).
  * - Se aplica de 05:00 a 24:00 horas en días laborables (Lunes a Sábado).
  * - Requiere validación previa y acreditación con estado APROBADA y vigencia no expirada.
- * - Fuera de dicho horario, días no laborables o sin acreditación aprobada, se cobra tarifa REGULAR ADULTO.
+ * - Fuera de dicho horario, días no laborables o sin acreditación aprobada, se cobra tarifa NORMAL.
  */
 const db = require('../config/db');
 
@@ -31,14 +31,14 @@ const calculateApplicableFare = async (pasajeroId, customDate = new Date()) => {
   const horaActualStr = now.toTimeString().split(' ')[0]; // 'HH:MM:SS'
   const fechaHoyStr = now.toISOString().split('T')[0]; // 'YYYY-MM-DD'
 
-  // 1. Obtener la tarifa regular de adulto vigente como base
-  const tarifaAdulto = await db('tarifas')
-    .where({ tipo_pasajero: 'ADULTO', activo: true })
+  // 1. Obtener la tarifa normal vigente como base
+  const tarifaNormal = await db('tarifas')
+    .where({ tipo_pasajero: 'NORMAL', activo: true })
     .orderBy('id', 'desc')
     .first();
 
-  if (!tarifaAdulto) {
-    throw new Error('No se encontró una tarifa regular de adulto configurada en el sistema.');
+  if (!tarifaNormal) {
+    throw new Error('No se encontró una tarifa normal configurada en el sistema.');
   }
 
   // 2. Verificar si el pasajero tiene una acreditación preferencial APROBADA y VIGENTE
@@ -56,32 +56,30 @@ const calculateApplicableFare = async (pasajeroId, customDate = new Date()) => {
   // Si no cuenta con acreditación aprobada, se aplica la tarifa regular
   if (!acreditacion) {
     return {
-      tarifaId: tarifaAdulto.id,
-      tipoPasajero: 'REGULAR',
-      tipoTarifaAplicada: 'ADULTO',
-      monto: parseFloat(tarifaAdulto.monto),
+      tarifaId: tarifaNormal.id,
+      tipoPasajero: 'NORMAL',
+      tipoTarifaAplicada: 'NORMAL',
+      monto: parseFloat(tarifaNormal.monto),
       descuento: 0,
-      motivo: 'Sin acreditación preferencial activa aprobada (Tarifa Regular)',
+      motivo: 'Sin acreditación universitaria activa (Tarifa normal)',
       esMedioPasaje: false,
     };
   }
 
   // 3. Evaluar horario y día de la Ley 26271 para la tarifa preferencial correspondiente
-  const tipoPreferencial = acreditacion.tipo_preferencial; // 'UNIVERSITARIO' o 'ESCOLAR'
-
   const tarifaPreferencial = await db('tarifas')
-    .where({ tipo_pasajero: tipoPreferencial, activo: true })
+    .where({ tipo_pasajero: 'UNIVERSITARIA', activo: true })
     .orderBy('id', 'desc')
     .first();
 
   if (!tarifaPreferencial) {
     return {
-      tarifaId: tarifaAdulto.id,
-      tipoPasajero: tipoPreferencial,
-      tipoTarifaAplicada: 'ADULTO',
-      monto: parseFloat(tarifaAdulto.monto),
+      tarifaId: tarifaNormal.id,
+      tipoPasajero: 'UNIVERSITARIA',
+      tipoTarifaAplicada: 'NORMAL',
+      monto: parseFloat(tarifaNormal.monto),
       descuento: 0,
-      motivo: `Tarifa preferencial para ${tipoPreferencial} no disponible en sistema`,
+      motivo: 'Tarifa universitaria no disponible en el sistema',
       esMedioPasaje: false,
     };
   }
@@ -101,8 +99,8 @@ const calculateApplicableFare = async (pasajeroId, customDate = new Date()) => {
   if (esDiaValido && esHoraValida) {
     return {
       tarifaId: tarifaPreferencial.id,
-      tipoPasajero: tipoPreferencial,
-      tipoTarifaAplicada: tipoPreferencial,
+      tipoPasajero: 'UNIVERSITARIA',
+      tipoTarifaAplicada: 'UNIVERSITARIA',
       monto: parseFloat(tarifaPreferencial.monto),
       descuento: parseFloat(tarifaPreferencial.porcentaje_descuento),
       motivo: `Beneficio Ley 26271 aplicado (50% de descuento en horario 05:00 a 24:00)`,
@@ -111,12 +109,12 @@ const calculateApplicableFare = async (pasajeroId, customDate = new Date()) => {
     };
   } else {
     return {
-      tarifaId: tarifaAdulto.id,
-      tipoPasajero: tipoPreferencial,
-      tipoTarifaAplicada: 'ADULTO',
-      monto: parseFloat(tarifaAdulto.monto),
+      tarifaId: tarifaNormal.id,
+      tipoPasajero: 'UNIVERSITARIA',
+      tipoTarifaAplicada: 'NORMAL',
+      monto: parseFloat(tarifaNormal.monto),
       descuento: 0,
-      motivo: `Acreditado como ${tipoPreferencial}, pero fuera del horario reglamentario Ley 26271 (05:00 a 24:00 días laborables)`,
+      motivo: 'Acreditación universitaria fuera del horario reglamentario (05:00 a 24:00 días laborables)',
       esMedioPasaje: false,
     };
   }

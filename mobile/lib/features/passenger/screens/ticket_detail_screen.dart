@@ -20,7 +20,7 @@ class TicketDetailScreen extends StatelessWidget {
     final cuenca = ticket['cuenca'] ?? 'C3 Cayma';
     final monto = (ticket['monto'] as num?)?.toDouble() ?? 1.0;
     final tipoTarifa =
-        ticket['tipoTarifa'] ?? ticket['tipo_tarifa_aplicada'] ?? 'ADULTO';
+        ticket['tipoTarifa'] ?? ticket['tipo_tarifa_aplicada'] ?? 'NORMAL';
 
     return Scaffold(
       appBar: AppBar(

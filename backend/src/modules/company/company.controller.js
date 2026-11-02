@@ -97,19 +97,57 @@ const createDriver = async (req, res, next) => {
   try {
     const { email, password, nombres, apellidos, dni, telefono, numeroLicencia, categoriaLicencia, vehiculoId, empresaId } = req.body;
 
-    if (!email || !password || !nombres || !apellidos || !dni || !numeroLicencia) {
-      return res.status(400).json({ success: false, message: 'Todos los campos obligatorios deben ser llenados.' });
+    if (!email || !password || !nombres || !apellidos || !dni || !numeroLicencia || !vehiculoId) {
+      return res.status(400).json({ success: false, message: 'Completa los datos obligatorios y selecciona una placa de la flota.' });
     }
 
-    const targetEmpresaId = empresaId || (await db('empresas').where({ admin_usuario_id: req.user.id }).first())?.id;
-    if (!targetEmpresaId) {
+    const adminEmpresa = req.user.rol === 'ADMIN_EMPRESA'
+      ? await db('empresas').where({ admin_usuario_id: req.user.id, activo: true }).first()
+      : null;
+    if (req.user.rol === 'ADMIN_EMPRESA' && !adminEmpresa) {
       return res.status(400).json({ success: false, message: 'Identificador de empresa no determinado.' });
+    }
+
+    const vehiculo = await db('vehiculos')
+      .where({ id: vehiculoId, activo: true })
+      .first();
+    if (!vehiculo) {
+      return res.status(404).json({ success: false, message: 'La placa seleccionada no existe o está inactiva.' });
+    }
+
+    if (adminEmpresa && vehiculo.empresa_id !== adminEmpresa.id) {
+      return res.status(403).json({ success: false, message: 'La placa seleccionada no pertenece a su empresa.' });
+    }
+
+    const targetEmpresaId = adminEmpresa?.id || empresaId || vehiculo.empresa_id;
+    if (vehiculo.empresa_id !== targetEmpresaId) {
+      return res.status(400).json({ success: false, message: 'La placa y la empresa del chofer deben coincidir.' });
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
     const rolChofer = await db('roles').where({ codigo: 'CHOFER' }).first();
+    if (!rolChofer) {
+      return res.status(500).json({ success: false, message: 'El rol CHOFER no está configurado.' });
+    }
 
     const choferCreado = await db.transaction(async (trx) => {
+      const lockedVehicle = await trx('vehiculos')
+        .where({ id: vehiculo.id, empresa_id: targetEmpresaId, activo: true })
+        .forUpdate()
+        .first();
+      if (!lockedVehicle) {
+        const error = new Error('La placa seleccionada ya no está disponible para esta empresa.');
+        error.statusCode = 409;
+        throw error;
+      }
+
+      const assignedDriver = await trx('choferes').where({ vehiculo_id: lockedVehicle.id }).first();
+      if (assignedDriver) {
+        const error = new Error(`La placa ${lockedVehicle.placa} ya está asignada a otro chofer.`);
+        error.statusCode = 409;
+        throw error;
+      }
+
       const [usuario] = await trx('usuarios')
         .insert({
           email: email.toLowerCase().trim(),
@@ -135,7 +173,7 @@ const createDriver = async (req, res, next) => {
         .insert({
           usuario_id: usuario.id,
           empresa_id: targetEmpresaId,
-          vehiculo_id: vehiculoId || null,
+          vehiculo_id: vehiculo.id,
           numero_licencia: numeroLicencia.trim(),
           categoria_licencia: categoriaLicencia || 'A-IIIa',
           estado_operativo: 'DISPONIBLE',

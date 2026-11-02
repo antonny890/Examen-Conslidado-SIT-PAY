@@ -56,46 +56,32 @@ class _SplashScreenState extends State<SplashScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              width: 90,
-              height: 90,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.2),
-                    blurRadius: 20,
-                    offset: const Offset(0, 10),
-                  ),
-                ],
-              ),
-              child: const Icon(
-                Icons.directions_bus_rounded,
-                size: 52,
-                color: Color(0xFF0F3B60),
-              ),
+            Image.asset(
+              'assets/images/sit-pay-logo.png',
+              width: 220,
+              height: 220,
+              fit: BoxFit.contain,
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 12),
             const Text(
-              'SIT-Pay',
+              'SIT-PAY',
               style: TextStyle(
-                fontSize: 32,
-                fontWeight: FontWeight.w900,
+                fontSize: 30,
                 color: Colors.white,
-                letterSpacing: 1.2,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 2,
               ),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             const Text(
-              'Arequipa • Pago Digital del Pasaje',
+              'Arequipa • Pago de pasaje rápido y seguro',
               style: TextStyle(
                 fontSize: 14,
                 color: Color(0xFF93C5FD),
                 fontWeight: FontWeight.w500,
               ),
             ),
-            const SizedBox(height: 48),
+            const SizedBox(height: 40),
             const SizedBox(
               width: 28,
               height: 28,

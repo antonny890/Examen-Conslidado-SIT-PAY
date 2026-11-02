@@ -4,7 +4,6 @@ import {
   LayoutDashboard,
   Bus,
   Users,
-  GraduationCap,
   FileSpreadsheet,
   AlertOctagon,
   Building2,
@@ -13,7 +12,6 @@ import {
   LogOut,
   Menu,
   X,
-  ChevronDown,
   User,
   Moon,
   Sun
@@ -35,7 +33,6 @@ export const AdminLayout: React.FC = () => {
     { to: '/admin/dashboard', label: 'Resumen de Empresa', icon: LayoutDashboard },
     { to: '/admin/fleet', label: 'Flota y Códigos QR', icon: Bus },
     { to: '/admin/drivers', label: 'Choferes y Asignación', icon: Users },
-    { to: '/admin/preferential', label: 'Medio Pasaje (Carnés)', icon: GraduationCap },
     { to: '/admin/reports', label: 'Reportes y Exportación CSV', icon: FileSpreadsheet },
     { to: '/admin/claims', label: 'Reclamos de Pasajeros', icon: AlertOctagon },
   ];
@@ -55,33 +52,48 @@ export const AdminLayout: React.FC = () => {
       {/* Sidebar */}
       <aside
         className={`${
-          sidebarOpen ? 'w-64' : 'w-20'
+          sidebarOpen ? 'w-64' : 'w-[72px]'
         } transition-all duration-300 border-r ${
           darkMode ? 'border-slate-800 bg-slate-900/90' : 'border-slate-200 bg-white'
         } flex flex-col justify-between z-30`}
       >
         <div>
           {/* Logo Brand */}
-          <div className="h-16 flex items-center justify-between px-4 border-b border-slate-800/80">
-            <div className="flex items-center gap-3 overflow-hidden">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center shrink-0">
-                <Bus className="w-5 h-5 text-slate-950 font-bold" />
-              </div>
-              {sidebarOpen && (
-                <div className="truncate">
-                  <div className="font-extrabold text-base tracking-tight text-white">SIT-Pay</div>
-                  <div className="text-[10px] text-slate-400 uppercase tracking-widest font-mono">
-                    {isSuperAdmin ? 'Super Admin' : 'Admin Empresa'}
+          <div className={`h-16 flex items-center border-b border-slate-800/80 ${sidebarOpen ? 'justify-between px-3' : 'justify-center px-1'}`}>
+            {sidebarOpen ? (
+              <>
+                <div className="flex items-center gap-3 overflow-hidden">
+                  <img
+                    src="/sit-pay-logo.png"
+                    alt="SIT-Pay"
+                    className="w-10 h-10 shrink-0 object-contain"
+                  />
+                  <div className="truncate">
+                    <div className="font-extrabold text-base tracking-tight text-white">SIT-Pay</div>
+                    <div className="text-[10px] text-slate-400 uppercase tracking-widest font-mono">
+                      {isSuperAdmin ? 'Super Admin' : 'Admin Empresa'}
+                    </div>
                   </div>
                 </div>
-              )}
-            </div>
-            <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="p-1 rounded-lg hover:bg-slate-800 text-slate-400"
-            >
-              {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </button>
+                <button
+                  type="button"
+                  aria-label="Contraer menú"
+                  onClick={() => setSidebarOpen(false)}
+                  className="w-9 h-9 inline-flex items-center justify-center rounded-lg hover:bg-slate-800 text-slate-400 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                aria-label="Expandir menú"
+                onClick={() => setSidebarOpen(true)}
+                className="w-11 h-11 inline-flex items-center justify-center rounded-xl hover:bg-slate-800 text-slate-300 transition-colors"
+              >
+                <Menu className="w-6 h-6" strokeWidth={2.2} />
+              </button>
+            )}
           </div>
 
           {/* Nav Items */}

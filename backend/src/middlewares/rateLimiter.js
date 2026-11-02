@@ -15,6 +15,17 @@ const authLimiter = rateLimit({
   },
 });
 
+const preferentialOtpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Demasiadas solicitudes de verificación. Intente nuevamente en 15 minutos.',
+  },
+});
+
 // Limite para endpoints transaccionales de pago (anti-abuso)
 const paymentLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minuto
@@ -29,5 +40,6 @@ const paymentLimiter = rateLimit({
 
 module.exports = {
   authLimiter,
+  preferentialOtpLimiter,
   paymentLimiter,
 };

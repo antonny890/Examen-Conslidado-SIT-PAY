@@ -8,9 +8,9 @@ export const ReportsPage: React.FC = () => {
   const [downloading, setDownloading] = useState(false);
 
   const sampleRows = [
-    { code: 'BOL-20261030-000001', date: '2026-10-30 07:45:00', plate: 'V7A-890', zone: 'C3 Cayma', fare: 'ADULTO', amount: 1.0, method: 'QR' },
-    { code: 'BOL-20261030-000002', date: '2026-10-30 08:12:00', plate: 'V7A-890', zone: 'C3 Cayma', fare: 'UNIVERSITARIO', amount: 0.5, method: 'QR' },
-    { code: 'BOL-20261030-000003', date: '2026-10-30 08:30:00', plate: 'V8B-123', zone: 'C2 Cono Norte', fare: 'ADULTO', amount: 1.0, method: 'PLACA_MANUAL' },
+    { code: 'BOL-20261030-000001', date: '2026-10-30 07:45:00', plate: 'V7A-890', zone: 'C3 Cayma', fare: 'NORMAL', amount: 1.0, method: 'QR' },
+    { code: 'BOL-20261030-000002', date: '2026-10-30 08:12:00', plate: 'V7A-890', zone: 'C3 Cayma', fare: 'UNIVERSITARIA', amount: 0.5, method: 'QR' },
+    { code: 'BOL-20261030-000003', date: '2026-10-30 08:30:00', plate: 'V8B-123', zone: 'C2 Cono Norte', fare: 'NORMAL', amount: 1.0, method: 'PLACA_MANUAL' },
   ];
 
   const handleExportCSV = async () => {

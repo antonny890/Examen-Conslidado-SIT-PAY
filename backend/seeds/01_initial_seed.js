@@ -84,15 +84,15 @@ exports.seed = async function (knex) {
   ];
   await knex('empresas').insert(empresasData);
 
-  // 4. Tarifas Configurables (Cumplimiento estricto Ley 26271)
+  // 4. Tarifas configurables: normal para todas las personas y universitaria acreditada
   const diasHabiles = JSON.stringify(['LUNES', 'MARTES', 'MIERCOLES', 'JUEVES', 'VIERNES', 'SABADO']);
   const todosLosDias = JSON.stringify(['LUNES', 'MARTES', 'MIERCOLES', 'JUEVES', 'VIERNES', 'SABADO', 'DOMINGO']);
 
   await knex('tarifas').insert([
     {
       id: 1,
-      nombre: 'Tarifa General Adulto',
-      tipo_pasajero: 'ADULTO',
+      nombre: 'Tarifa Normal',
+      tipo_pasajero: 'NORMAL',
       monto: 1.00,
       porcentaje_descuento: 0.0,
       hora_inicio: '00:00:00',
@@ -105,20 +105,7 @@ exports.seed = async function (knex) {
     {
       id: 2,
       nombre: 'Medio Pasaje Universitario (Ley 26271: 5:00 a 24:00)',
-      tipo_pasajero: 'UNIVERSITARIO',
-      monto: 0.50,
-      porcentaje_descuento: 50.0,
-      hora_inicio: '05:00:00',
-      hora_fin: '23:59:59',
-      dias_semana_aplicables: diasHabiles,
-      solo_dias_laborables: true,
-      vigencia_inicio: '2026-01-01',
-      activo: true,
-    },
-    {
-      id: 3,
-      nombre: 'Medio Pasaje Escolar (Ley 26271: 5:00 a 24:00)',
-      tipo_pasajero: 'ESCOLAR',
+      tipo_pasajero: 'UNIVERSITARIA',
       monto: 0.50,
       porcentaje_descuento: 50.0,
       hora_inicio: '05:00:00',
@@ -149,7 +136,7 @@ exports.seed = async function (knex) {
     { id: 'u0000000-0000-0000-0000-000000000006', email: 'pasajero.pedro@gmail.com', password_hash: passwordHash, rol_id: 4, email_verificado: true },
     // Pasajero Universitario (Universidad Continental)
     { id: 'u0000000-0000-0000-0000-000000000007', email: 'lucia.continental@continental.edu.pe', password_hash: passwordHash, rol_id: 4, email_verificado: true },
-    // Pasajero Escolar
+    // Pasajero regular de demostración
     { id: 'u0000000-0000-0000-0000-000000000008', email: 'rodrigo.escolar@gmail.com', password_hash: passwordHash, rol_id: 4, email_verificado: true },
   ];
   await knex('usuarios').insert(usuariosData);
@@ -248,28 +235,15 @@ exports.seed = async function (knex) {
     {
       id: 's1000000-0000-0000-0000-000000000001',
       usuario_id: 'u0000000-0000-0000-0000-000000000007',
-      tipo_preferencial: 'UNIVERSITARIO',
+      tipo_preferencial: 'UNIVERSITARIA',
       institucion_educativa: 'Universidad Continental - Filial Arequipa',
       metodo_verificacion: 'CORREO_INSTITUCIONAL',
       correo_institucional: 'lucia.continental@continental.edu.pe',
       estado: 'APROBADA',
-      revisor_usuario_id: 'u0000000-0000-0000-0000-000000000001', // Super admin
-      observacion_revision: 'Acreditación automática validada con dominio universitario institucional .edu.pe',
+      revisor_usuario_id: null,
+      observacion_revision: 'Acreditación automática validada mediante código en correo institucional.',
       fecha_vencimiento: '2026-12-31',
       fecha_revision_at: '2026-02-05 18:25:00',
-    },
-    // Rodrigo: Vía foto de carné escolar (PENDIENTE para pruebas del panel administrativo)
-    {
-      id: 's2000000-0000-0000-0000-000000000002',
-      usuario_id: 'u0000000-0000-0000-0000-000000000008',
-      tipo_preferencial: 'ESCOLAR',
-      institucion_educativa: 'I.E. Independencia Americana',
-      metodo_verificacion: 'FOTO_CARNE',
-      foto_carne_url: 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=400',
-      estado: 'PENDIENTE',
-      observacion_revision: null,
-      fecha_vencimiento: null,
-      fecha_revision_at: null,
     },
   ]);
 

@@ -53,10 +53,35 @@ const createFare = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Nombre, tipo de pasajero y monto son obligatorios.' });
     }
 
+    const tipoNormalizado = String(tipoPasajero).toUpperCase();
+    if (!['NORMAL', 'UNIVERSITARIA'].includes(tipoNormalizado)) {
+      return res.status(400).json({ success: false, message: 'El tipo debe ser NORMAL o UNIVERSITARIA.' });
+    }
+    if (!Number.isFinite(Number(monto)) || Number(monto) <= 0) {
+      return res.status(400).json({ success: false, message: 'El monto debe ser un número mayor que cero.' });
+    }
+    if (
+      porcentajeDescuento !== undefined &&
+      (!Number.isFinite(Number(porcentajeDescuento)) ||
+        Number(porcentajeDescuento) < 0 ||
+        Number(porcentajeDescuento) > 100)
+    ) {
+      return res.status(400).json({ success: false, message: 'El descuento debe estar entre 0 y 100.' });
+    }
+    const activeFare = await db('tarifas')
+      .where({ tipo_pasajero: tipoNormalizado, activo: true })
+      .first();
+    if (activeFare) {
+      return res.status(409).json({
+        success: false,
+        message: `Ya existe una tarifa activa de tipo ${tipoNormalizado}. Modifica la tarifa vigente.`,
+      });
+    }
+
     const [nuevaTarifa] = await db('tarifas')
       .insert({
         nombre,
-        tipo_pasajero: tipoPasajero.toUpperCase(),
+        tipo_pasajero: tipoNormalizado,
         monto: parseFloat(monto),
         porcentaje_descuento: porcentajeDescuento || 0,
         hora_inicio: horaInicio || '05:00:00',
@@ -103,6 +128,30 @@ const updateFare = async (req, res, next) => {
     const tarifaPrevia = await db('tarifas').where({ id }).first();
     if (!tarifaPrevia) {
       return res.status(404).json({ success: false, message: 'Tarifa no encontrada.' });
+    }
+
+    if (monto !== undefined && (!Number.isFinite(Number(monto)) || Number(monto) <= 0)) {
+      return res.status(400).json({ success: false, message: 'El monto debe ser un número mayor que cero.' });
+    }
+    if (
+      porcentajeDescuento !== undefined &&
+      (!Number.isFinite(Number(porcentajeDescuento)) ||
+        Number(porcentajeDescuento) < 0 ||
+        Number(porcentajeDescuento) > 100)
+    ) {
+      return res.status(400).json({ success: false, message: 'El descuento debe estar entre 0 y 100.' });
+    }
+    if (activo === true) {
+      const anotherActiveFare = await db('tarifas')
+        .where({ tipo_pasajero: tarifaPrevia.tipo_pasajero, activo: true })
+        .whereNot({ id })
+        .first();
+      if (anotherActiveFare) {
+        return res.status(409).json({
+          success: false,
+          message: `Ya existe una tarifa activa de tipo ${tarifaPrevia.tipo_pasajero}.`,
+        });
+      }
     }
 
     const updateData = {};

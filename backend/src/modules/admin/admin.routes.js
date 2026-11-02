@@ -13,7 +13,10 @@ router.use(authorizeRoles('SUPER_ADMIN'));
 router.get('/dashboard', adminController.getGlobalDashboard);
 router.get('/companies', adminController.getCompanies);
 router.post('/companies', adminController.createCompany);
+router.put('/companies/:id/status', adminController.setCompanyStatus);
 router.get('/business-units', adminController.getBusinessUnits);
+router.get('/users', adminController.getAdministrators);
+router.post('/users', adminController.createAdministrator);
 router.get('/audit-logs', adminController.getAuditLogs);
 router.put('/users/:id/status', adminController.toggleUserStatus);
 

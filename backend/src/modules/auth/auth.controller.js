@@ -3,9 +3,14 @@
  * Roles: SUPER_ADMIN, ADMIN_EMPRESA, CHOFER, PASAJERO
  */
 const bcrypt = require('bcrypt');
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const { OAuth2Client } = require('google-auth-library');
 const db = require('../../config/db');
 const jwtConfig = require('../../config/jwt');
+const { sendPasswordResetCode } = require('../../services/emailService');
+
+const googleOAuthClient = new OAuth2Client();
 
 // Generador de tokens JWT de acceso y refresco
 const generateTokens = (usuario, rolCodigo) => {
@@ -147,6 +152,7 @@ const login = async (req, res, next) => {
     // Obtener perfil y datos adicionales según rol
     const perfil = await db('perfiles').where({ usuario_id: usuario.id }).first();
     let choferInfo = null;
+    let empresaInfo = null;
 
     if (usuario.rol_codigo === 'CHOFER') {
       choferInfo = await db('choferes')
@@ -164,6 +170,11 @@ const login = async (req, res, next) => {
           'unidades_negocio.nombre as unidad_nombre'
         )
         .where({ 'choferes.usuario_id': usuario.id })
+        .first();
+    } else if (usuario.rol_codigo === 'ADMIN_EMPRESA') {
+      empresaInfo = await db('empresas')
+        .select('id', 'nombre_comercial', 'activo')
+        .where({ admin_usuario_id: usuario.id })
         .first();
     }
 
@@ -190,7 +201,100 @@ const login = async (req, res, next) => {
           nombres: perfil ? perfil.nombres : '',
           apellidos: perfil ? perfil.apellidos : '',
           fotoUrl: perfil ? perfil.foto_url : null,
+          empresaId: empresaInfo?.id || null,
+          empresaNombre: empresaInfo?.nombre_comercial || null,
+          empresaActiva: empresaInfo?.activo ?? null,
+          estado: usuario.estado,
+          emailVerificado: usuario.email_verificado,
           choferInfo: choferInfo || undefined,
+        },
+        tokens,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const loginWithGoogle = async (req, res, next) => {
+  try {
+    const { credential } = req.body;
+    const googleClientId = process.env.GOOGLE_CLIENT_ID;
+    if (!googleClientId) {
+      return res.status(503).json({ success: false, message: 'El inicio con Google no está configurado en el servidor.' });
+    }
+    if (!credential) {
+      return res.status(400).json({ success: false, message: 'No se recibió la credencial de Google.' });
+    }
+
+    let googleAccount;
+    try {
+      const ticket = await googleOAuthClient.verifyIdToken({
+        idToken: credential,
+        audience: googleClientId,
+      });
+      googleAccount = ticket.getPayload();
+    } catch (error) {
+      return res.status(401).json({ success: false, message: 'La credencial de Google no es válida o expiró.' });
+    }
+
+    if (!googleAccount?.email || googleAccount.email_verified !== true) {
+      return res.status(401).json({ success: false, message: 'Google no pudo verificar el correo de esta cuenta.' });
+    }
+
+    const usuario = await db('usuarios')
+      .join('roles', 'usuarios.rol_id', 'roles.id')
+      .leftJoin('perfiles', 'usuarios.id', 'perfiles.usuario_id')
+      .leftJoin('empresas', 'empresas.admin_usuario_id', 'usuarios.id')
+      .select(
+        'usuarios.*',
+        'roles.codigo as rol_codigo',
+        'roles.nombre as rol_nombre',
+        'perfiles.nombres',
+        'perfiles.apellidos',
+        'perfiles.foto_url',
+        'empresas.id as empresa_id',
+        'empresas.nombre_comercial as empresa_nombre',
+        'empresas.activo as empresa_activa'
+      )
+      .where({ 'usuarios.email': googleAccount.email.toLowerCase() })
+      .whereNull('usuarios.deleted_at')
+      .first();
+
+    if (!usuario || !['ADMIN_EMPRESA', 'SUPER_ADMIN'].includes(usuario.rol_codigo)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Esta cuenta Google no está vinculada a un usuario administrativo de SIT-Pay.',
+      });
+    }
+    if (usuario.estado !== 'ACTIVO' || (usuario.rol_codigo === 'ADMIN_EMPRESA' && !usuario.empresa_activa)) {
+      return res.status(403).json({ success: false, message: 'La cuenta administrativa está inactiva.' });
+    }
+
+    const tokens = generateTokens(usuario, usuario.rol_codigo);
+    const refreshHash = await bcrypt.hash(tokens.refreshToken, 8);
+    await db('usuarios').where({ id: usuario.id }).update({
+      ultimo_login_at: new Date(),
+      refresh_token_hash: refreshHash,
+    });
+
+    res.json({
+      success: true,
+      message: 'Inicio de sesión con Google exitoso.',
+      data: {
+        usuario: {
+          id: usuario.id,
+          email: usuario.email,
+          rol: usuario.rol_codigo,
+          rolNombre: usuario.rol_nombre,
+          nombres: usuario.nombres || '',
+          apellidos: usuario.apellidos || '',
+          fotoUrl: usuario.foto_url || googleAccount.picture || null,
+          empresaId: usuario.empresa_id || null,
+          empresaNombre: usuario.empresa_nombre || null,
+          empresaActiva: usuario.empresa_activa ?? null,
+          estado: usuario.estado,
+          emailVerificado: usuario.email_verificado,
         },
         tokens,
       },
@@ -257,7 +361,7 @@ const logout = async (req, res, next) => {
   }
 };
 
-// 5. Recuperación de Contraseña Simulada (Envío de token de recuperación)
+// 5. Recuperación de contraseña por código de correo
 const forgotPassword = async (req, res, next) => {
   try {
     const { email } = req.body;
@@ -274,23 +378,29 @@ const forgotPassword = async (req, res, next) => {
       });
     }
 
-    const tokenRecuperacion = Math.floor(100000 + Math.random() * 900000).toString(); // Código 6 dígitos
-    const expira = new Date(Date.now() + 15 * 60 * 1000); // 15 minutos
+    const tokenRecuperacion = crypto.randomInt(100000, 1000000).toString();
+    const tokenHash = crypto.createHash('sha256').update(tokenRecuperacion).digest('hex');
+    const expira = new Date(Date.now() + 15 * 60 * 1000);
 
     await db('usuarios')
       .where({ id: usuario.id })
       .update({
-        token_recuperacion: tokenRecuperacion,
+        token_recuperacion: tokenHash,
         expiracion_recuperacion: expira,
       });
 
-    console.log(`[SIMULACIÓN CORREO] Código de recuperación para ${email}: ${tokenRecuperacion}`);
+    try {
+      await sendPasswordResetCode({ to: usuario.email, code: tokenRecuperacion });
+    } catch (error) {
+      await db('usuarios')
+        .where({ id: usuario.id, token_recuperacion: tokenHash })
+        .update({ token_recuperacion: null, expiracion_recuperacion: null });
+      throw error;
+    }
 
     res.json({
       success: true,
       message: 'Si el correo está registrado, se enviaron las instrucciones de recuperación.',
-      // En modo desarrollo exponemos el código para facilitar pruebas académicas
-      codigoPruebaDev: process.env.NODE_ENV === 'development' ? tokenRecuperacion : undefined,
     });
   } catch (error) {
     next(error);
@@ -306,10 +416,18 @@ const resetPassword = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Todos los campos son requeridos.' });
     }
 
+    if (!/^\d{6}$/.test(String(token)) || String(newPassword).length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: 'El código debe tener 6 dígitos y la contraseña nueva al menos 8 caracteres.',
+      });
+    }
+
+    const tokenHash = crypto.createHash('sha256').update(String(token)).digest('hex');
     const usuario = await db('usuarios')
       .where({
         email: email.toLowerCase().trim(),
-        token_recuperacion: token,
+        token_recuperacion: tokenHash,
       })
       .andWhere('expiracion_recuperacion', '>', new Date())
       .first();
@@ -343,6 +461,7 @@ const resetPassword = async (req, res, next) => {
 module.exports = {
   registerPassenger,
   login,
+  loginWithGoogle,
   refreshToken,
   logout,
   forgotPassword,

@@ -27,7 +27,6 @@ class ApiConstants {
   static const String preferentialStatus = '/preferential/status';
   static const String preferentialRequestEmail = '/preferential/request-email';
   static const String preferentialVerifyCode = '/preferential/verify-code';
-  static const String preferentialRequestCard = '/preferential/request-card';
 
   // Vehículos y QR
   static const String vehicleQR = '/vehicles';

@@ -28,6 +28,16 @@ const getVehicles = async (req, res, next) => {
       )
       .where({ 'vehiculos.activo': true });
 
+    if (req.user.rol === 'ADMIN_EMPRESA') {
+      const empresa = await db('empresas')
+        .where({ admin_usuario_id: req.user.id, activo: true })
+        .first();
+      if (!empresa) {
+        return res.status(404).json({ success: false, message: 'No se encontró una empresa activa para este administrador.' });
+      }
+      query = query.where({ 'vehiculos.empresa_id': empresa.id });
+    }
+
     if (empresaId) query = query.where({ 'vehiculos.empresa_id': empresaId });
     if (unidadNegocioId) query = query.where({ 'vehiculos.unidad_negocio_id': unidadNegocioId });
 

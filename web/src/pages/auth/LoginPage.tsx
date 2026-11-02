@@ -1,16 +1,99 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Bus, Lock, Mail, ShieldAlert, ArrowRight } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Lock, Mail, ShieldAlert, ArrowRight } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: {
+          initialize: (options: {
+            client_id: string;
+            callback: (response: { credential: string }) => void;
+          }) => void;
+          renderButton: (
+            parent: HTMLElement,
+            options: { theme: 'outline'; size: 'large'; width: number; text: 'continue_with' }
+          ) => void;
+        };
+      };
+    };
+  }
+}
+
 export const LoginPage: React.FC = () => {
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
 
+  const googleButtonRef = useRef<HTMLDivElement>(null);
+  const googleLoginRef = useRef(loginWithGoogle);
+  googleLoginRef.current = loginWithGoogle;
+  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim() || '';
   const [email, setEmail] = useState('admin.transcayma@sitpay.gob.pe');
   const [password, setPassword] = useState('SitPay2026!');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!googleClientId || !googleButtonRef.current) return;
+
+    let disposed = false;
+    const showScriptError = () =>
+      setError('No se pudo cargar el servicio de inicio de sesión de Google.');
+    const renderGoogleButton = () => {
+      if (disposed || !window.google || !googleButtonRef.current) return;
+      window.google.accounts.id.initialize({
+        client_id: googleClientId,
+        callback: async ({ credential }) => {
+          setError(null);
+          setLoading(true);
+          const result = await googleLoginRef.current(credential);
+          setLoading(false);
+          if (!result.success) {
+            setError(result.message || 'No se pudo iniciar sesión con Google.');
+            return;
+          }
+          const storedUser = JSON.parse(localStorage.getItem('sit_pay_admin_user') || '{}');
+          navigate(storedUser.rol === 'SUPER_ADMIN' ? '/superadmin/dashboard' : '/admin/dashboard');
+        },
+      });
+      googleButtonRef.current.replaceChildren();
+      window.google.accounts.id.renderButton(googleButtonRef.current, {
+        theme: 'outline',
+        size: 'large',
+        width: Math.min(360, googleButtonRef.current.clientWidth),
+        text: 'continue_with',
+      });
+    };
+
+    if (window.google) {
+      renderGoogleButton();
+    } else {
+      let script = document.getElementById('google-identity-services') as HTMLScriptElement | null;
+      if (!script) {
+        script = document.createElement('script');
+        script.id = 'google-identity-services';
+        script.src = 'https://accounts.google.com/gsi/client';
+        script.async = true;
+        script.defer = true;
+        document.head.appendChild(script);
+      }
+      script.addEventListener('load', renderGoogleButton);
+      script.addEventListener('error', showScriptError);
+      return () => {
+        disposed = true;
+        script?.removeEventListener('load', renderGoogleButton);
+        script?.removeEventListener('error', showScriptError);
+        googleButtonRef.current?.replaceChildren();
+      };
+    }
+
+    return () => {
+      disposed = true;
+      googleButtonRef.current?.replaceChildren();
+    };
+  }, [googleClientId, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,9 +142,11 @@ export const LoginPage: React.FC = () => {
       <div className="max-w-md w-full space-y-8 z-10">
         {/* Logo Brand */}
         <div className="text-center space-y-2">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 mx-auto flex items-center justify-center shadow-xl shadow-emerald-500/20">
-            <Bus className="w-8 h-8 text-slate-950 font-bold" />
-          </div>
+          <img
+            src="/sit-pay-logo.png"
+            alt="Logo de SIT-Pay"
+            className="w-28 h-28 object-contain mx-auto drop-shadow-xl"
+          />
           <h1 className="text-2xl font-black text-white tracking-tight">SIT-Pay Arequipa</h1>
           <p className="text-xs text-slate-400">
             Panel de Control Administrativo • Concesionarias y Fiscalización
@@ -125,7 +210,15 @@ export const LoginPage: React.FC = () => {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-300">Contraseña</label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-slate-300">Contraseña</label>
+                <Link
+                  to="/forgot-password"
+                  className="text-[11px] font-semibold text-emerald-400 hover:text-emerald-300"
+                >
+                  ¿Olvidaste tu contraseña?
+                </Link>
+              </div>
               <div className="relative">
                 <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-3.5" />
                 <input
@@ -137,6 +230,26 @@ export const LoginPage: React.FC = () => {
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-emerald-500 transition-colors"
                 />
               </div>
+            </div>
+
+            <div className="space-y-3 pt-1">
+              <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider text-slate-500">
+                <span className="h-px flex-1 bg-slate-800" />
+                O continúa con
+                <span className="h-px flex-1 bg-slate-800" />
+              </div>
+              {googleClientId ? (
+                <div ref={googleButtonRef} className="flex min-h-10 justify-center" />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setError('El acceso Google requiere configurar VITE_GOOGLE_CLIENT_ID en web y GOOGLE_CLIENT_ID en el backend.')}
+                  className="flex w-full items-center justify-center gap-3 rounded-xl border border-slate-700 bg-white px-4 py-2.5 text-xs font-semibold text-slate-800 hover:bg-slate-100"
+                >
+                  <span className="text-base font-black text-blue-600">G</span>
+                  Iniciar sesión con Google
+                </button>
+              )}
             </div>
 
             <button

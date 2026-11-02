@@ -9,6 +9,11 @@ export interface User {
   nombres: string;
   apellidos: string;
   fotoUrl?: string;
+  empresaId?: string | null;
+  empresaNombre?: string | null;
+  empresaActiva?: boolean | null;
+  estado?: string;
+  emailVerificado?: boolean;
 }
 
 interface AuthContextType {
@@ -17,6 +22,7 @@ interface AuthContextType {
   isLoading: boolean;
   isDemoMode: boolean;
   login: (email: string, pass: string) => Promise<{ success: boolean; message?: string }>;
+  loginWithGoogle: (credential: string) => Promise<{ success: boolean; message?: string }>;
   logout: () => void;
   isSuperAdmin: boolean;
   isAdminEmpresa: boolean;
@@ -58,6 +64,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         rolNombre: 'Administrador de Empresa (Demo)',
         nombres: 'Gabriela Torres',
         apellidos: 'Valdivia',
+        empresaId: 'demo-company-transcayma',
+        empresaNombre: 'Transcayma S.A.',
+        empresaActiva: true,
+        estado: 'ACTIVO',
+        emailVerificado: true,
       },
       'superadmin@sitpay.gob.pe': {
         id: 'demo-super-admin',
@@ -66,6 +77,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         rolNombre: 'Super Administrador (Demo)',
         nombres: 'Hernán Peralta',
         apellidos: 'Mendoza',
+        estado: 'ACTIVO',
+        emailVerificado: true,
       },
     };
 
@@ -114,6 +127,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const loginWithGoogle = async (credential: string) => {
+    try {
+      const response = await api.post('/auth/google', { credential });
+      if (!response.data.success) {
+        return { success: false, message: response.data.message || 'No se pudo iniciar sesión con Google.' };
+      }
+
+      const data = response.data.data;
+      const loggedUser: User = data.usuario;
+      if (loggedUser.rol !== 'SUPER_ADMIN' && loggedUser.rol !== 'ADMIN_EMPRESA') {
+        return {
+          success: false,
+          message: 'Solo las cuentas administrativas pueden acceder al panel web.',
+        };
+      }
+
+      const accessToken = data.tokens.accessToken;
+      setToken(accessToken);
+      setUser(loggedUser);
+      setIsDemoMode(false);
+      localStorage.setItem('sit_pay_admin_token', accessToken);
+      localStorage.setItem('sit_pay_admin_user', JSON.stringify(loggedUser));
+      localStorage.removeItem('sit_pay_admin_demo');
+      return { success: true };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || 'No se pudo iniciar sesión con Google. Inténtalo nuevamente.',
+      };
+    }
+  };
+
   const logout = () => {
     localStorage.removeItem('sit_pay_admin_token');
     localStorage.removeItem('sit_pay_admin_user');
@@ -131,6 +176,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         isDemoMode,
         login,
+        loginWithGoogle,
         logout,
         isSuperAdmin: user?.rol === 'SUPER_ADMIN',
         isAdminEmpresa: user?.rol === 'ADMIN_EMPRESA',

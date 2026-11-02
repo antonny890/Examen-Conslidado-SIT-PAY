@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/network/api_client.dart';
 
@@ -16,7 +17,14 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _emailController = TextEditingController();
   final _apiClient = ApiClient();
   bool _isLoading = false;
+  bool _hasError = false;
   String? _infoMessage;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    super.dispose();
+  }
 
   Future<void> _handleReset() async {
     final email = _emailController.text.trim();
@@ -36,12 +44,21 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       );
 
       setState(() {
+        _hasError = false;
         _infoMessage = response.data['message'] ?? 'Instrucciones enviadas.';
+      });
+    } on DioException catch (error) {
+      setState(() {
+        _hasError = true;
+        _infoMessage = error.response?.data is Map
+            ? error.response?.data['message'] as String? ??
+                'No se pudo enviar el código. Inténtalo nuevamente.'
+            : 'No se pudo enviar el código. Comprueba tu conexión e inténtalo nuevamente.';
       });
     } catch (_) {
       setState(() {
-        _infoMessage =
-            'Si el correo está registrado, se envió el código de recuperación.';
+        _hasError = true;
+        _infoMessage = 'Ocurrió un error inesperado al solicitar el código.';
       });
     } finally {
       setState(() => _isLoading = false);
@@ -87,13 +104,17 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: emerald.withValues(alpha: 0.2),
+                  color: (_hasError ? Colors.red : emerald)
+                      .withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: emerald),
+                  border: Border.all(color: _hasError ? Colors.red : emerald),
                 ),
                 child: Text(
                   _infoMessage!,
-                  style: const TextStyle(fontSize: 13, color: emerald),
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: _hasError ? Colors.red.shade200 : emerald,
+                  ),
                   textAlign: TextAlign.center,
                 ),
               ),

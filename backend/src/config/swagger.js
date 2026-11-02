@@ -88,7 +88,7 @@ SIT-Pay no almacena dinero ni mantiene saldos. Los cobros requieren una API banc
         properties: {
           institucionEducativa: { type: 'string', example: 'Universidad Continental' },
           correoInstitucional: { type: 'string', example: 'alumno@continental.edu.pe' },
-          tipoPreferencial: { type: 'string', enum: ['UNIVERSITARIO', 'ESCOLAR'], example: 'UNIVERSITARIO' },
+          tipoPreferencial: { type: 'string', enum: ['UNIVERSITARIA'], example: 'UNIVERSITARIA' },
         },
       },
       ClaimRequest: {
@@ -118,6 +118,81 @@ SIT-Pay no almacena dinero ni mantiene saldos. Los cobros requieren una API banc
           200: { description: 'Login exitoso, devuelve JWT y perfil' },
           401: { description: 'Credenciales inválidas' },
           403: { description: 'Cuenta inactiva o bloqueada' },
+        },
+      },
+      '/auth/google': {
+        post: {
+          tags: ['Autenticación'],
+          summary: 'Iniciar sesión en el panel con Google para una cuenta administrativa existente',
+          description: 'Verifica el ID token de Google en el backend. Solo permite cuentas ADMIN_EMPRESA o SUPER_ADMIN existentes y requiere GOOGLE_CLIENT_ID.',
+          security: [],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['credential'],
+                  properties: { credential: { type: 'string', description: 'ID token devuelto por Google Identity Services' } },
+                },
+              },
+            },
+          },
+          responses: {
+            200: { description: 'Login exitoso, devuelve JWT y perfil administrativo' },
+            403: { description: 'La cuenta Google no corresponde a una cuenta administrativa activa de SIT-Pay' },
+            503: { description: 'Inicio con Google no configurado' },
+          },
+        },
+      },
+      '/auth/forgot-password': {
+        post: {
+          tags: ['Autenticación'],
+          summary: 'Enviar código de recuperación al correo de la cuenta',
+          security: [],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['email'],
+                  properties: { email: { type: 'string', format: 'email' } },
+                },
+              },
+            },
+          },
+          responses: {
+            200: { description: 'Respuesta genérica de recuperación enviada' },
+            503: { description: 'El servicio SMTP no está disponible' },
+          },
+        },
+      },
+      '/auth/reset-password': {
+        post: {
+          tags: ['Autenticación'],
+          summary: 'Cambiar contraseña con código de recuperación de un solo uso',
+          security: [],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['email', 'token', 'newPassword'],
+                  properties: {
+                    email: { type: 'string', format: 'email' },
+                    token: { type: 'string', pattern: '^\\d{6}$' },
+                    newPassword: { type: 'string', minLength: 8 },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            200: { description: 'Contraseña actualizada; se revocan las sesiones de refresco existentes' },
+            400: { description: 'Código inválido/expirado o contraseña no válida' },
+          },
         },
       },
     },
@@ -257,6 +332,14 @@ SIT-Pay no almacena dinero ni mantiene saldos. Los cobros requieren una API banc
         responses: { 200: { description: 'SVG y DataURL del QR' } },
       },
     },
+    '/vehicles': {
+      get: {
+        tags: ['Flota y Códigos QR'],
+        summary: 'Listar vehículos activos; los administradores de empresa solo ven su propia flota',
+        security: [{ BearerAuth: [] }],
+        responses: { 200: { description: 'Vehículos con placa, cuenca y asignación de chofer' } },
+      },
+    },
     '/claims': {
       post: {
         tags: ['Reclamos e Incidencias (Ley 29571)'],
@@ -272,6 +355,37 @@ SIT-Pay no almacena dinero ni mantiene saldos. Los cobros requieren una API banc
         summary: 'Dashboard de recaudación del día, flota y choferes de la empresa',
         security: [{ BearerAuth: [] }],
         responses: { 200: { description: 'Métricas consolidadas de la empresa concesionaria' } },
+      },
+    },
+    '/company/drivers': {
+      post: {
+        tags: ['Administración de Empresa'],
+        summary: 'Crear chofer y asignarle obligatoriamente un vehículo activo y disponible de su empresa',
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['email', 'password', 'nombres', 'apellidos', 'dni', 'numeroLicencia', 'vehiculoId'],
+                properties: {
+                  email: { type: 'string', format: 'email' },
+                  password: { type: 'string', minLength: 8 },
+                  nombres: { type: 'string' },
+                  apellidos: { type: 'string' },
+                  dni: { type: 'string', example: '40192837' },
+                  numeroLicencia: { type: 'string' },
+                  vehiculoId: { type: 'string', format: 'uuid', description: 'ID de la placa disponible seleccionada en la flota de la empresa' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          201: { description: 'Chofer creado y vinculado a la placa seleccionada' },
+          409: { description: 'La placa ya está asignada a otro chofer' },
+        },
       },
     },
     '/admin/dashboard': {

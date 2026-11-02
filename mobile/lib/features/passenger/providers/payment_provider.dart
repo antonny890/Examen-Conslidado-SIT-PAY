@@ -36,7 +36,7 @@ class PaymentProvider extends ChangeNotifier {
       },
       'tarifa': {
         'monto': 1.00,
-        'tipoTarifaAplicada': 'ADULTO',
+        'tipoTarifaAplicada': 'NORMAL',
       },
       'paymentAvailable': false,
     };

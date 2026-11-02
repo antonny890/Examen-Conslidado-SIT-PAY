@@ -100,10 +100,11 @@ Contraseña unificada: SitPay2026!
    DB_SSL=false
 
    # Seguridad JWT
-   JWT_SECRET=super_secret_sit_pay_jwt_key_arequipa_2026
+   JWT_SECRET=replace-with-a-random-secret
    JWT_EXPIRES_IN=2h
-   JWT_REFRESH_SECRET=refresh_super_secret_sit_pay_key_2026
+   JWT_REFRESH_SECRET=replace-with-another-random-secret
    JWT_REFRESH_EXPIRES_IN=7d
+   GOOGLE_CLIENT_ID=tu-id-de-cliente-oauth-web
 
    # CORS
    CORS_ORIGIN=http://localhost:3000,http://localhost:5173
@@ -111,9 +112,20 @@ Contraseña unificada: SitPay2026!
    # Dominios universitarios autorizados (Ley 26271)
    ALLOWED_EDU_DOMAINS=continental.edu.pe,unsa.edu.pe,ucsm.edu.pe,utp.edu.pe
 
+   # Correo institucional (SMTP): obligatorio en producción para enviar códigos OTP.
+   SMTP_HOST=smtp.example.edu.pe
+   SMTP_PORT=587
+   SMTP_USER=cuenta-de-correo
+   SMTP_PASSWORD=contraseña-de-aplicación
+   SMTP_FROM=SIT-Pay <no-reply@example.edu.pe>
+
    # Token Migo para consulta de DNI: obtener uno nuevo y mantenerlo solo en el .env local/servidor.
    MIGO_API_TOKEN=tu_token_nuevo
    ```
+
+   En desarrollo, si SMTP no está configurado, el código OTP universitario se muestra solo para pruebas. La recuperación/cambio de contraseña requiere SMTP configurado y no expone códigos en la respuesta. En producción, la solicitud falla explícitamente si falta SMTP o si el envío no se completa. La confirmación del OTP activa automáticamente la tarifa universitaria; no requiere aprobación de la empresa.
+
+   Para habilitar el inicio administrativo con Google, configura un cliente OAuth 2.0 de tipo aplicación web en Google Cloud Console. Copia el mismo Client ID en `backend/.env` como `GOOGLE_CLIENT_ID` y en `web/.env` como `VITE_GOOGLE_CLIENT_ID`; agrega los orígenes autorizados de la web. El botón permite entrar solo con correos ya registrados como `ADMIN_EMPRESA` o `SUPER_ADMIN`; no crea cuentas automáticamente.
 
    La consulta de DNI móvil usa `/api/v1/auth/lookup-dni` a través de este backend y no consulta PostgreSQL. Requiere que el servidor API esté iniciado y que `MIGO_API_TOKEN` esté configurado. No incluyas el token en Flutter, en Git ni en capturas.
 
@@ -123,6 +135,7 @@ Contraseña unificada: SitPay2026!
    npx knex seed:run
    ```
    La migración retira tablas de billetera/recargas y columnas de saldo, y marca como `ANULADA` las transacciones `EXITOSA` del esquema anterior porque no tienen confirmación bancaria verificable. Si hay datos que deban conservarse, respalde y revise la base antes de aplicarla.
+   Las migraciones normalizan las categorías de tarifa a `NORMAL` y `UNIVERSITARIA`; la tarifa universitaria mantiene su acreditación por OTP institucional.
 
    **Pagos:** mientras no se configure e integre una API bancaria, las rutas de cobro responden `503 PAYMENT_PROVIDER_NOT_CONFIGURED`; no crean transacciones ni comprobantes de pago.
    **Seed:** `npx knex seed:run` borra y vuelve a crear los datos del sistema; ejecútelo solo en una base desechable de desarrollo o pruebas. No genera transacciones de pago ficticias.
@@ -192,18 +205,14 @@ Esta guía cubre funciones disponibles y deja explícito el límite del flujo de
 ### Paso 2: Acreditación de Medio Pasaje (Ley N° 26271)
 1. Iniciar sesión como pasajero regular `pasajero.pedro@gmail.com`.
 2. Tocar la opción **"Medio Pasaje (Ley 26271)"** en el inicio.
-3. **Método A (Correo Institucional)**:
-   - Seleccionar tipo "Universitario".
+3. **Correo institucional**:
    - Ingresar institución: "Universidad Continental".
    - Ingresar correo: `pedro.continental@continental.edu.pe`.
    - Presionar "Enviar Código de Verificación".
-   - En la consola del backend o en pantalla aparecerá el código de 6 dígitos simulado (ej. `591240`).
+   - En desarrollo, el código de prueba aparece en pantalla y en la consola; con SMTP configurado se envía al correo.
    - Ingresar el código OTP y presionar "Verificar".
    - **Resultado**: El pase pasa inmediatamente a **`APROBADA`** con vigencia de 6 meses. A partir de ese momento, el sistema le cobrará **S/ 0.50** dentro del horario de 05:00 a 24:00 horas.
-4. **Método B (Foto del Carné)**:
-   - Probar con la cuenta de Rodrigo (`rodrigo.escolar@gmail.com`).
-   - Al adjuntar foto del carné, queda en estado **`PENDIENTE`**.
-   - El pasajero sigue pagando tarifa regular de S/ 1.00 hasta que la concesionaria lo apruebe.
+4. No hay envío de foto de carné ni aprobación por parte de la concesionaria. Mientras el correo no se verifique, se aplica la tarifa normal.
 
 ---
 

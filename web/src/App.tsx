@@ -1,8 +1,9 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AdminLayout } from './components/layout/AdminLayout';
 import { LoginPage } from './pages/auth/LoginPage';
+import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage';
 import { CompanyDashboardPage } from './pages/admin/CompanyDashboardPage';
 import { FleetPage } from './pages/admin/FleetPage';
 import { DriversPage } from './pages/admin/DriversPage';
@@ -13,6 +14,7 @@ import { SuperAdminDashboardPage } from './pages/superadmin/SuperAdminDashboardP
 import { CompaniesAndUnitsPage } from './pages/superadmin/CompaniesAndUnitsPage';
 import { FaresConfigurationPage } from './pages/superadmin/FaresConfigurationPage';
 import { AuditLogsPage } from './pages/superadmin/AuditLogsPage';
+import { AdministratorsPage } from './pages/superadmin/AdministratorsPage';
 import { ProfilePage } from './pages/profile/ProfilePage';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRole?: string }> = ({
@@ -42,6 +44,7 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
           {/* Rutas Administrativas con Layout */}
           <Route
@@ -59,11 +62,20 @@ export default function App() {
             <Route path="/admin/reports" element={<ReportsPage />} />
             <Route path="/admin/claims" element={<ClaimsManagementPage />} />
 
+            <Route
+              element={
+                <ProtectedRoute allowedRole="SUPER_ADMIN">
+                  <Outlet />
+                </ProtectedRoute>
+              }
+            >
             {/* Rutas Super Admin */}
             <Route path="/superadmin/dashboard" element={<SuperAdminDashboardPage />} />
             <Route path="/superadmin/companies" element={<CompaniesAndUnitsPage />} />
             <Route path="/superadmin/fares" element={<FaresConfigurationPage />} />
+            <Route path="/superadmin/users" element={<AdministratorsPage />} />
             <Route path="/superadmin/audit" element={<AuditLogsPage />} />
+            </Route>
 
             {/* Perfil Común */}
             <Route path="/profile" element={<ProfilePage />} />

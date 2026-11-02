@@ -234,8 +234,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          tarifa?['tipoTarifaAplicada'] == 'ADULTO'
-                              ? 'Tarifa Regular Adulto'
+                          tarifa?['tipoTarifaAplicada'] == 'NORMAL'
+                              ? 'Tarifa Normal'
                               : 'Medio Pasaje Acreditado (50%)',
                           style: const TextStyle(
                               fontWeight: FontWeight.bold, fontSize: 13),

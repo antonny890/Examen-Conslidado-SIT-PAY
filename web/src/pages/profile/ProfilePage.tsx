@@ -1,9 +1,13 @@
-import React from 'react';
-import { User, ShieldCheck, Mail, Lock } from 'lucide-react';
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { User, ShieldCheck, Mail, Building2, CircleCheck, CircleX, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { PasswordRecoveryForm } from '../auth/PasswordRecoveryForm';
 
 export const ProfilePage: React.FC = () => {
-  const { user, isSuperAdmin } = useAuth();
+  const { user, isSuperAdmin, logout } = useAuth();
+  const navigate = useNavigate();
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
@@ -29,28 +33,89 @@ export const ProfilePage: React.FC = () => {
         </div>
 
         <div className="border-t border-slate-800 pt-4 space-y-3 text-xs">
-          <div className="flex justify-between py-2 border-b border-slate-800/60">
-            <span className="text-slate-400">Rol de Sistema (RBAC):</span>
-            <span className="font-mono font-bold text-white">{user?.rol}</span>
-          </div>
-          <div className="flex justify-between py-2 border-b border-slate-800/60">
-            <span className="text-slate-400">Protección de Datos:</span>
-            <span className="text-emerald-400 font-semibold flex items-center gap-1">
-              <ShieldCheck className="w-3.5 h-3.5" />
-              Consentimiento Activo (Ley 29733)
+          <ProfileRow
+            icon={<User className="h-4 w-4" />}
+            label="Rol de sistema"
+            value={isSuperAdmin ? 'Super Administrador' : 'Administrador de Empresa'}
+          />
+          <ProfileRow
+            icon={user?.emailVerificado
+              ? <CircleCheck className="h-4 w-4 text-emerald-400" />
+              : <CircleX className="h-4 w-4 text-amber-400" />}
+            label="Correo"
+            value={user?.emailVerificado ? 'Verificado' : 'Pendiente de verificación'}
+          />
+          <ProfileRow
+            icon={user?.estado === 'ACTIVO'
+              ? <ShieldCheck className="h-4 w-4 text-emerald-400" />
+              : <ShieldCheck className="h-4 w-4 text-amber-400" />}
+            label="Estado de cuenta"
+            value={user?.estado || 'Activo'}
+          />
+          {user?.rol === 'ADMIN_EMPRESA' && (
+            <ProfileRow
+              icon={<Building2 className="h-4 w-4" />}
+              label="Empresa asignada"
+              value={user.empresaNombre || 'Sin empresa asignada'}
+            />
+          )}
+          <div className="flex items-center justify-between gap-4 py-2 border-b border-slate-800/60">
+            <span className="flex items-center gap-2 text-slate-400">
+              <Mail className="h-4 w-4" />
+              Correo de acceso
             </span>
+            <span className="font-medium text-white">{user?.email}</span>
           </div>
         </div>
 
         <div className="pt-2">
           <button
-            onClick={() => alert('Cambio de contraseña disponible.')}
-            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold transition-colors"
+            type="button"
+            onClick={() => setIsPasswordModalOpen(true)}
+            className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl text-xs font-bold transition-colors"
           >
-            Actualizar Contraseña
+            Cambiar contraseña
           </button>
         </div>
       </div>
+
+      {isPasswordModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <div className="relative w-full max-w-md">
+            <button
+              type="button"
+              onClick={() => setIsPasswordModalOpen(false)}
+              aria-label="Cerrar cambio de contraseña"
+              className="absolute -top-3 -right-3 z-10 rounded-full border border-slate-700 bg-slate-900 p-2 text-slate-300 hover:text-white"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <PasswordRecoveryForm
+              initialEmail={user?.email || ''}
+              emailLocked
+              onCancel={() => setIsPasswordModalOpen(false)}
+              onComplete={() => {
+                logout();
+                navigate('/login', { replace: true });
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
+const ProfileRow: React.FC<{
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+}> = ({ icon, label, value }) => (
+  <div className="flex items-center justify-between gap-4 py-2 border-b border-slate-800/60">
+    <span className="flex items-center gap-2 text-slate-400">
+      {icon}
+      {label}
+    </span>
+    <span className="text-right font-medium text-white">{value}</span>
+  </div>
+);

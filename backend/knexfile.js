@@ -2,7 +2,7 @@
  * Configuración de Knex.js para SIT-Pay Arequipa
  * Soporta entornos de desarrollo, pruebas y producción con PostgreSQL
  */
-require('dotenv').config({ path: '../.env' });
+require('dotenv').config({ path: './.env' });
 
 module.exports = {
   development: {

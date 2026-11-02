@@ -11,6 +11,7 @@ const { authLimiter } = require('../../middlewares/rateLimiter');
 router.post('/register', authLimiter, authController.registerPassenger);
 router.post('/lookup-dni', authLimiter, dniController.lookupDni);
 router.post('/login', authLimiter, authController.login);
+router.post('/google', authLimiter, authController.loginWithGoogle);
 router.post('/refresh', authController.refreshToken);
 router.post('/logout', authenticateJWT, authController.logout);
 router.post('/forgot-password', authLimiter, authController.forgotPassword);

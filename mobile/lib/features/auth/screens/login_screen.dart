@@ -90,17 +90,11 @@ class _LoginScreenState extends State<LoginScreen> {
                 Center(
                   child: Column(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF0F3B60),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: const Icon(
-                          Icons.directions_bus_rounded,
-                          size: 40,
-                          color: Colors.white,
-                        ),
+                      Image.asset(
+                        'assets/images/sit-pay-logo.png',
+                        width: 128,
+                        height: 128,
+                        fit: BoxFit.contain,
                       ),
                       const SizedBox(height: 12),
                       const Text(
@@ -209,8 +203,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     hintText: 'ejemplo@correo.com',
                   ),
                   validator: (val) {
-                    if (val == null || val.trim().isEmpty)
+                    if (val == null || val.trim().isEmpty) {
                       return 'Ingrese su correo.';
+                    }
                     if (!val.contains('@')) return 'Correo no válido.';
                     return null;
                   },
@@ -235,8 +230,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   validator: (val) {
-                    if (val == null || val.isEmpty)
+                    if (val == null || val.isEmpty) {
                       return 'Ingrese su contraseña.';
+                    }
                     return null;
                   },
                 ),
