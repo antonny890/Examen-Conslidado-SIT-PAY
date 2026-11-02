@@ -1,0 +1,42 @@
+name: sit_pay_mobile
+description: "App móvil Flutter de SIT-Pay Arequipa para Pasajeros y Choferes (Transacciones y Cero Distracción)"
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.2.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # Gestión de estado y arquitectura limpia
+  provider: ^6.1.2
+  # Cliente HTTP con interceptores JWT
+  dio: ^5.7.0
+  # Almacenamiento seguro de tokens y credenciales
+  flutter_secure_storage: ^9.2.2
+  # Lectura de códigos QR con cámara
+  mobile_scanner: ^5.2.3
+  # Generación y visualización de códigos QR vectoriales
+  qr_flutter: ^4.1.0
+  # Comunicación en tiempo real por WebSockets
+  socket_io_client: ^3.0.1
+  # Alertas sonoras
+  audioplayers: ^6.1.0
+  # Mantener pantalla encendida para el chofer durante el turno
+  wakelock_plus: ^1.2.8
+  # Formato de fechas y moneda en español
+  intl: ^0.19.0
+  # Íconos modernos y expresivos
+  cupertino_icons: ^1.0.8
+  image_picker: ^1.2.4
+  path_provider: ^2.1.6
+  shared_preferences: ^2.5.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true

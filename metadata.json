@@ -1,0 +1,6 @@
+{
+  "name": "SIT-Pay Arequipa",
+  "description": "Sistema de pago digital del pasaje del transporte público urbano de Arequipa, Perú",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
