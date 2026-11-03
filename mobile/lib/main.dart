@@ -28,7 +28,7 @@ class SitPayMobileApp extends StatelessWidget {
       ],
       child: Consumer<ThemeModeProvider>(
         builder: (context, themeModeProvider, _) => MaterialApp(
-          title: 'SIT-Pay Arequipa',
+          title: 'SIT-PAY',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.lightTheme,
           darkTheme: AppTheme.darkTheme,

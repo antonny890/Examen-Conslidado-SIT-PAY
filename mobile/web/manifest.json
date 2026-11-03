@@ -1,11 +1,11 @@
 {
-    "name": "sit_pay_mobile",
-    "short_name": "sit_pay_mobile",
+    "name": "SIT-PAY",
+    "short_name": "SIT-PAY",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#005CFF",
+    "theme_color": "#005CFF",
+    "description": "SIT-PAY - Sistema de Pago Digital del Pasaje",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
