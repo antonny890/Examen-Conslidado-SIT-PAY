@@ -16,12 +16,18 @@ import '../../auth/models/user_model.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../auth/screens/forgot_password_screen.dart';
 import '../../auth/screens/login_screen.dart';
+import '../../passenger/screens/claims_screen.dart';
 
 const _profileBlue = Color(0xFF0F3B60);
 const _profileAccent = Color(0xFF10B981);
+const _profileLightBackground = Color(0xFFF4F5F7);
+const _profileDarkBackground = Color(0xFF090D16);
+const _profileDarkPanel = Color(0xFF171717);
 
 class ProfileScreen extends StatelessWidget {
-  const ProfileScreen({super.key});
+  const ProfileScreen({super.key, this.showBackButton = true});
+
+  final bool showBackButton;
 
   @override
   Widget build(BuildContext context) {
@@ -29,7 +35,9 @@ class ProfileScreen extends StatelessWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final displayName = user?.esChofer == true
-        ? (user?.alias.isNotEmpty == true ? user!.alias : 'Conductor')
+        ? (user?.choferInfo?.unidadCodigo.trim().isNotEmpty == true
+            ? 'Unidad ${user!.choferInfo!.unidadCodigo}'
+            : 'Unidad no asignada')
         : (user?.nombreVisible.isNotEmpty == true
             ? user!.nombreVisible
             : 'Usuario SIT-Pay');
@@ -39,14 +47,24 @@ class ProfileScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Perfil'),
-        leading: IconButton(
-          tooltip: 'Volver',
-          onPressed: () => Navigator.of(context).maybePop(),
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
-        ),
+        backgroundColor:
+            isDark ? _profileDarkBackground : _profileLightBackground,
+        automaticallyImplyLeading: showBackButton,
+        leading: showBackButton
+            ? IconButton(
+                tooltip: 'Volver',
+                onPressed: () => Navigator.of(context).maybePop(),
+                icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
+              )
+            : null,
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          8,
+          16,
+          MediaQuery.viewPaddingOf(context).bottom + 28,
+        ),
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(8, 0, 8, 22),
@@ -80,7 +98,9 @@ class ProfileScreen extends StatelessWidget {
               _ProfileMenuTile(
                 icon: Icons.person_outline_rounded,
                 title: 'Administrar perfil',
-                subtitle: 'Datos personales, alias y foto',
+                subtitle: user?.esChofer == true
+                    ? 'Datos de cuenta, unidad y foto'
+                    : 'Datos personales, alias y foto',
                 onTap: () => _push(context, const _ManageProfileScreen()),
               ),
               _ProfileMenuTile(
@@ -151,6 +171,12 @@ class ProfileScreen extends StatelessWidget {
                     ],
                   ),
                 ),
+              ),
+              _ProfileMenuTile(
+                icon: Icons.report_problem_outlined,
+                title: 'Reclamos e incidencias',
+                subtitle: 'Reporta un problema con un transporte',
+                onTap: () => _push(context, const ClaimsScreen()),
               ),
               _ProfileMenuTile(
                 icon: Icons.article_outlined,
@@ -224,7 +250,7 @@ class ProfileScreen extends StatelessWidget {
         ],
       ),
       backgroundColor:
-          isDark ? const Color(0xFF090D16) : const Color(0xFFF4F5F7),
+          isDark ? _profileDarkBackground : _profileLightBackground,
     );
   }
 }
@@ -266,7 +292,9 @@ Widget _profileAvatar(UserModel? user, {double radius = 42}) {
   final localImageExists = imagePath != null && File(imagePath).existsSync();
   final imageUrl = user?.fotoUrl;
   final initial = user?.esChofer == true
-      ? (user?.alias.isNotEmpty == true ? user!.alias[0] : 'C')
+      ? (user?.choferInfo?.unidadCodigo.trim().isNotEmpty == true
+          ? user!.choferInfo!.unidadCodigo.trim()[0]
+          : 'C')
       : (user?.nombres.isNotEmpty == true ? user!.nombres[0] : 'U');
   ImageProvider<Object>? backgroundImage;
   if (localImageExists) {
@@ -318,7 +346,7 @@ class _ProfileGroup extends StatelessWidget {
             ),
           ),
           Material(
-            color: isDark ? const Color(0xFF171717) : Colors.white,
+            color: isDark ? _profileDarkPanel : Colors.white,
             borderRadius: BorderRadius.circular(14),
             clipBehavior: Clip.antiAlias,
             child: Column(children: children),
@@ -417,18 +445,31 @@ class _ProfileSubpage extends StatelessWidget {
     required this.title,
     required this.icon,
     required this.child,
+    this.showUserHeader = true,
   });
 
   final String title;
   final IconData icon;
   final Widget child;
+  final bool showUserHeader;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final user = context.watch<AuthProvider>().currentUser;
+    final isDark = theme.brightness == Brightness.dark;
+    final displayName = user?.esChofer == true
+        ? (user?.alias.isNotEmpty == true ? user!.alias : 'Conductor')
+        : (user?.nombreVisible.isNotEmpty == true
+            ? user!.nombreVisible
+            : 'Usuario SIT-Pay');
+    final email = user?.email.isNotEmpty == true ? user!.email : 'Sin correo';
+
     return Scaffold(
       appBar: AppBar(
-        title: Text(title),
+        title: const Text('Perfil'),
+        backgroundColor:
+            isDark ? _profileDarkBackground : _profileLightBackground,
         leading: IconButton(
           tooltip: 'Volver al perfil',
           onPressed: () => Navigator.of(context).maybePop(),
@@ -436,34 +477,61 @@ class _ProfileSubpage extends StatelessWidget {
         ),
       ),
       body: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
         children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surface,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: theme.colorScheme.outlineVariant),
+          if (showUserHeader)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 22),
+              child: Column(
+                children: [
+                  _profileAvatar(user, radius: 29),
+                  const SizedBox(height: 10),
+                  Text(
+                    displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    email,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
             ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 5),
             child: Row(
               children: [
-                Icon(icon, color: theme.colorScheme.primary, size: 22),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    title,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                Icon(
+                  icon,
+                  size: 14,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  title,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 5),
           child,
         ],
       ),
+      backgroundColor:
+          isDark ? _profileDarkBackground : _profileLightBackground,
     );
   }
 }
@@ -607,6 +675,7 @@ class _ManageProfileScreenState extends State<_ManageProfileScreen> {
       return const _ProfileSubpage(
         title: 'Administrar perfil',
         icon: Icons.person_outline_rounded,
+        showUserHeader: false,
         child: Text('No hay una sesión activa.'),
       );
     }
@@ -619,6 +688,7 @@ class _ManageProfileScreenState extends State<_ManageProfileScreen> {
     return _ProfileSubpage(
       title: 'Administrar perfil',
       icon: Icons.person_outline_rounded,
+      showUserHeader: false,
       child: Column(
         children: [
           Center(
@@ -660,33 +730,37 @@ class _ManageProfileScreenState extends State<_ManageProfileScreen> {
               ],
             ],
           ),
-          const SizedBox(height: 12),
-          _ProfileDataCard(
-            title: 'Alias',
-            rows: [
-              _DataRow(
-                label: 'Alias actual',
-                value: user.alias.isEmpty ? 'Sin alias' : user.alias,
+          if (!user.esChofer) ...[
+            const SizedBox(height: 12),
+            _ProfileDataCard(
+              title: 'Alias',
+              rows: [
+                _DataRow(
+                  label: 'Alias actual',
+                  value: user.alias.isEmpty ? 'Sin alias' : user.alias,
+                ),
+              ],
+              footer: Text(
+                canChangeAlias
+                    ? 'Puedes cambiarlo cada 15 días. Usa letras y números, sin espacios ni símbolos.'
+                    : 'Podrás cambiarlo el ${DateFormat('dd/MM/yyyy').format(nextAliasChange!)}.',
+                style: Theme.of(context).textTheme.bodySmall,
               ),
-            ],
-            footer: Text(
-              canChangeAlias
-                  ? 'Puedes cambiarlo cada 15 días. Usa letras y números, sin espacios ni símbolos.'
-                  : 'Podrás cambiarlo el ${DateFormat('dd/MM/yyyy').format(nextAliasChange!)}.',
-              style: Theme.of(context).textTheme.bodySmall,
+              action: OutlinedButton.icon(
+                onPressed: canChangeAlias ? () => _editAlias(user) : null,
+                icon: const Icon(Icons.edit_outlined),
+                label: Text(
+                    user.alias.isEmpty ? 'Agregar alias' : 'Cambiar alias'),
+              ),
             ),
-            action: OutlinedButton.icon(
-              onPressed: canChangeAlias ? () => _editAlias(user) : null,
-              icon: const Icon(Icons.edit_outlined),
-              label:
-                  Text(user.alias.isEmpty ? 'Agregar alias' : 'Cambiar alias'),
-            ),
-          ),
+          ],
           const SizedBox(height: 12),
-          const _PrivacyNotice(),
+          _PrivacyNotice(isDriver: user.esChofer),
           const SizedBox(height: 8),
           Text(
-            'La foto y el alias se guardan en este dispositivo.',
+            user.esChofer
+                ? 'Tu unidad es asignada por el administrador. La foto se guarda en este dispositivo.'
+                : 'La foto y el alias se guardan en este dispositivo.',
             style: Theme.of(context).textTheme.bodySmall,
             textAlign: TextAlign.center,
           ),
@@ -1187,12 +1261,13 @@ class _ProfileDataCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
+        color: isDark ? _profileDarkPanel : Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1273,7 +1348,9 @@ class _DataRowTile extends StatelessWidget {
 }
 
 class _PrivacyNotice extends StatelessWidget {
-  const _PrivacyNotice();
+  const _PrivacyNotice({this.isDriver = false});
+
+  final bool isDriver;
 
   @override
   Widget build(BuildContext context) {
@@ -1287,9 +1364,11 @@ class _PrivacyNotice extends StatelessWidget {
           color: theme.colorScheme.primary.withValues(alpha: 0.18),
         ),
       ),
-      child: const Text(
-        'Tus nombres y apellidos registrados no se pueden modificar desde la app. El alias es opcional.',
-        style: TextStyle(fontSize: 12, height: 1.4),
+      child: Text(
+        isDriver
+            ? 'El número de unidad y la asignación del transporte los administra la empresa; no se modifican desde esta app.'
+            : 'Tus nombres y apellidos registrados no se pueden modificar desde la app. El alias es opcional.',
+        style: const TextStyle(fontSize: 12, height: 1.4),
       ),
     );
   }

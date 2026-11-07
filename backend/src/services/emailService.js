@@ -63,4 +63,18 @@ const sendPasswordResetCode = async ({ to, code }) => {
   });
 };
 
-module.exports = { sendInstitutionalVerificationCode, sendPasswordResetCode };
+const sendRegistrationVerificationCode = async ({ to, code }) => {
+  await createTransporter().sendMail({
+    from: process.env.SMTP_FROM,
+    to,
+    subject: 'Confirma tu correo electrónico - SIT-Pay',
+    text: `Tu código de verificación para SIT-Pay es ${code}. Expira en 5 minutos. Si no solicitaste crear esta cuenta, ignora este correo.`,
+    html: `<p>Usa este código para confirmar tu correo electrónico en SIT-Pay:</p><p style="font-size:28px;font-weight:bold;letter-spacing:6px">${code}</p><p>El código expira en 5 minutos. Si no solicitaste crear esta cuenta, ignora este correo.</p>`,
+  });
+};
+
+module.exports = {
+  sendInstitutionalVerificationCode,
+  sendPasswordResetCode,
+  sendRegistrationVerificationCode,
+};

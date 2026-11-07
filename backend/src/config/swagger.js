@@ -93,11 +93,13 @@ SIT-Pay no almacena dinero ni mantiene saldos. Los cobros requieren una API banc
       },
       ClaimRequest: {
         type: 'object',
-        required: ['tipoIncidencia', 'descripcion'],
+        required: ['destinatario', 'vehiculoId', 'tipoIncidencia', 'descripcion'],
         properties: {
           transaccionId: { type: 'string', format: 'uuid', nullable: true },
-          tipoIncidencia: { type: 'string', enum: ['COBRO_INDEBIDO', 'NEGATIVA_MEDIO_PASAJE', 'MALTRATO_CHOFER', 'OTRO'], example: 'NEGATIVA_MEDIO_PASAJE' },
-          descripcion: { type: 'string', example: 'El chofer indicó que no aceptaba pasaje escolar a pesar de estar dentro del horario de la ley.' },
+          destinatario: { type: 'string', enum: ['EMPRESA', 'SUPER_ADMIN'], example: 'EMPRESA' },
+          vehiculoId: { type: 'string', format: 'uuid' },
+          tipoIncidencia: { type: 'string', enum: ['CONDICIONES_UNIDAD', 'LIMPIEZA_UNIDAD', 'COBRO_INDEBIDO', 'NEGATIVA_MEDIO_PASAJE', 'MALTRATO_CHOFER', 'RUTA_TRANSPORTE', 'FRECUENCIA_SERVICIO', 'SEGURIDAD_TRANSPORTE', 'FALLA_SISTEMA', 'OTRO'], example: 'CONDICIONES_UNIDAD' },
+          descripcion: { type: 'string', minLength: 10, maxLength: 2000, example: 'Los asientos de la unidad están en mal estado.' },
           evidenciaUrl: { type: 'string', nullable: true },
         },
       },
@@ -109,6 +111,58 @@ SIT-Pay no almacena dinero ni mantiene saldos. Los cobros requieren una API banc
     },
   ],
   paths: {
+    '/auth/registration-email/request': {
+      post: {
+        tags: ['Autenticación'],
+        summary: 'Enviar código de confirmación de registro por correo',
+        security: [],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['email'],
+                properties: { email: { type: 'string', format: 'email' } },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: 'Código enviado; expira en 5 minutos y puede reenviarse cada 60 segundos' },
+          400: { description: 'No existe un registro pendiente para este correo' },
+          429: { description: 'Tiempo de espera de reenvío o límite de intentos' },
+          503: { description: 'Servicio SMTP no configurado' },
+        },
+      },
+    },
+    '/auth/registration-email/verify': {
+      post: {
+        tags: ['Autenticación'],
+        summary: 'Verificar código de registro y activar la cuenta',
+        security: [],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['email', 'code'],
+                properties: {
+                  email: { type: 'string', format: 'email' },
+                  code: { type: 'string', pattern: '^\\d{6}$' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: 'Correo confirmado; devuelve el perfil y tokens de sesión' },
+          400: { description: 'Código inválido, expirado o cuenta no pendiente' },
+          429: { description: 'Se agotaron los intentos de verificación' },
+        },
+      },
+    },
     '/auth/login': {
       post: {
         tags: ['Autenticación'],
@@ -117,7 +171,7 @@ SIT-Pay no almacena dinero ni mantiene saldos. Los cobros requieren una API banc
         responses: {
           200: { description: 'Login exitoso, devuelve JWT y perfil' },
           401: { description: 'Credenciales inválidas' },
-          403: { description: 'Cuenta inactiva o bloqueada' },
+          403: { description: 'Cuenta inactiva o correo pendiente de confirmación' },
         },
       },
       '/auth/google': {
@@ -202,7 +256,7 @@ SIT-Pay no almacena dinero ni mantiene saldos. Los cobros requieren una API banc
         summary: 'Registro público de nuevos pasajeros con consentimiento Ley 29733',
         requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/RegisterPassengerRequest' } } } },
         responses: {
-          201: { description: 'Pasajero creado exitosamente' },
+          201: { description: 'Cuenta creada como pendiente; no devuelve sesión hasta verificar el correo' },
           400: { description: 'Faltan datos obligatorios o consentimiento denegado' },
           409: { description: 'El correo electrónico ya existe' },
         },

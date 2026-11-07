@@ -49,7 +49,11 @@ const getCompanyDashboard = async (req, res, next) => {
 
     // 4. Solicitudes y reclamos pendientes
     const [{ count: reclamosPendientes }] = await db('incidencias_reclamos')
-      .where({ empresa_id: empresaId, estado: 'REGISTRADO' })
+      .where({
+        empresa_id: empresaId,
+        destinatario: 'EMPRESA',
+        estado: 'REGISTRADO',
+      })
       .count('id as count');
 
     // 5. Últimas 10 transacciones

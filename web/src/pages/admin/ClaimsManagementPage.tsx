@@ -59,6 +59,8 @@ export const ClaimsManagementPage: React.FC = () => {
               <tr className="border-b border-slate-800 text-slate-400 font-semibold bg-slate-950/40">
                 <th className="py-3 px-4">Código Reclamo</th>
                 <th className="py-3 px-4">Pasajero</th>
+                <th className="py-3 px-4">Dirigido a</th>
+                <th className="py-3 px-4">Transporte</th>
                 <th className="py-3 px-4">Tipo Incidencia</th>
                 <th className="py-3 px-4">Descripción de los Hechos</th>
                 <th className="py-3 px-4">Estado</th>
@@ -72,6 +74,15 @@ export const ClaimsManagementPage: React.FC = () => {
                   <td className="py-3 px-4">
                     <div className="font-semibold text-white">{c.pasajero_nombres} {c.pasajero_apellidos}</div>
                     <div className="text-[11px] text-slate-400">{c.pasajero_email}</div>
+                  </td>
+                  <td className="py-3 px-4 text-slate-300">
+                    {c.destinatario === 'EMPRESA' ? 'Empresa' : 'Super Admin'}
+                  </td>
+                  <td className="py-3 px-4 text-slate-300">
+                    {c.vehiculo_placa || 'No especificado'}
+                    {c.empresa_nombre && (
+                      <div className="text-[11px] text-slate-400">{c.empresa_nombre}</div>
+                    )}
                   </td>
                   <td className="py-3 px-4 font-semibold text-amber-400">
                     {(c.tipo_incidencia || '').replace(/_/g, ' ')}

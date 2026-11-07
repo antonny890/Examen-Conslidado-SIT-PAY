@@ -74,7 +74,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     final qrData = driverSocket.qrCode ??
         auth.currentUser?.choferInfo?.qrCodigoSeguro ??
         '';
-    final driverAlias = auth.currentUser?.alias.trim() ?? '';
+    final unitCode = auth.currentUser?.choferInfo?.unidadCodigo.trim() ?? '';
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -146,9 +146,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            driverAlias.isEmpty
-                                ? 'CONDUCTOR'
-                                : 'CONDUCTOR · $driverAlias',
+                            unitCode.isEmpty
+                                ? 'CONDUCTOR · UNIDAD NO ASIGNADA'
+                                : 'UNIDAD · $unitCode',
                             style: TextStyle(
                               color: primaryTextColor,
                               fontSize: 12,

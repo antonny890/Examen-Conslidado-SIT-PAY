@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../../core/utils/alias_rules.dart';
 import '../providers/auth_provider.dart';
-import '../../passenger/screens/passenger_home_screen.dart';
+import 'face_verification_screen.dart';
 import '../../../services/migo_service.dart';
 
 /// Pantalla de Registro de Pasajeros
@@ -84,9 +84,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (!mounted) return;
 
     if (success) {
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const PassengerHomeScreen()),
-        (route) => false,
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => FaceVerificationScreen(
+            email: _emailController.text.trim().toLowerCase(),
+          ),
+        ),
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(

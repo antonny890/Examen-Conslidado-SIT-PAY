@@ -16,12 +16,22 @@ class AuthProvider extends ChangeNotifier {
   bool _isLoading = false;
   bool _isDemoMode = false;
   String? _errorMessage;
+  String? _pendingRegistrationEmail;
+  String _pendingRegistrationAlias = '';
+  DateTime? _registrationCodeSentAt;
 
   UserModel? get currentUser => _currentUser;
   bool get isLoading => _isLoading;
   bool get isDemoMode => _isDemoMode;
   String? get errorMessage => _errorMessage;
   bool get isAuthenticated => _currentUser != null;
+  bool get hasPendingRegistrationCode => _registrationCodeSentAt != null;
+  int get registrationCodeResendSeconds {
+    final sentAt = _registrationCodeSentAt;
+    if (sentAt == null) return 0;
+    final remaining = 60 - DateTime.now().difference(sentAt).inSeconds;
+    return remaining > 0 ? remaining : 0;
+  }
 
   // 1. Verificar sesión persistente al abrir la app
   Future<bool> checkCurrentSession() async {
@@ -57,6 +67,9 @@ class AuthProvider extends ChangeNotifier {
     _isLoading = true;
     _isDemoMode = false;
     _errorMessage = null;
+    _pendingRegistrationEmail = null;
+    _pendingRegistrationAlias = '';
+    _registrationCodeSentAt = null;
     notifyListeners();
 
     try {
@@ -106,6 +119,9 @@ class AuthProvider extends ChangeNotifier {
 
   void loginDemo({required bool asDriver}) {
     _errorMessage = null;
+    _pendingRegistrationEmail = null;
+    _pendingRegistrationAlias = '';
+    _registrationCodeSentAt = null;
     _isDemoMode = true;
     _currentUser = UserModel(
       id: asDriver ? 'demo-driver' : 'demo-passenger',
@@ -143,6 +159,11 @@ class AuthProvider extends ChangeNotifier {
   }) async {
     _isLoading = true;
     _errorMessage = null;
+    if (_pendingRegistrationEmail != email.trim().toLowerCase()) {
+      _registrationCodeSentAt = null;
+    }
+    _pendingRegistrationEmail = null;
+    _pendingRegistrationAlias = '';
     notifyListeners();
 
     try {
@@ -161,29 +182,8 @@ class AuthProvider extends ChangeNotifier {
       );
 
       if (response.statusCode == 201 && response.data['success'] == true) {
-        final data = response.data['data'];
-        final tokens = data['tokens'];
-        final userJson = data['usuario'];
-
-        final registeredUser = UserModel.fromJson(userJson);
-        final normalizedAlias = alias.trim();
-        _currentUser = registeredUser.copyWith(
-          alias: normalizedAlias,
-          aliasUpdatedAt: normalizedAlias.isEmpty ? null : DateTime.now(),
-        );
-        if (normalizedAlias.isNotEmpty) {
-          await LocalProfileStore.save(_currentUser!);
-        }
-
-        await SecureStorageService.saveTokens(
-          accessToken: tokens['accessToken'],
-          refreshToken: tokens['refreshToken'],
-        );
-        await SecureStorageService.saveUserRole('PASAJERO');
-        await SecureStorageService.saveUserData(
-          jsonEncode(_currentUser!.toJson()),
-        );
-
+        _pendingRegistrationEmail = email.trim().toLowerCase();
+        _pendingRegistrationAlias = alias.trim();
         _isLoading = false;
         notifyListeners();
         return true;
@@ -195,6 +195,111 @@ class AuthProvider extends ChangeNotifier {
       _errorMessage = e.response?.data?['message'] ?? 'Error de conexión.';
     } catch (e) {
       _errorMessage = 'Ocurrió un error al procesar el registro.';
+    }
+
+    _isLoading = false;
+    notifyListeners();
+    return false;
+  }
+
+  Future<bool> requestRegistrationEmailCode(String email) async {
+    _errorMessage = null;
+    final normalizedEmail = email.trim().toLowerCase();
+    if (_pendingRegistrationEmail != null &&
+        normalizedEmail != _pendingRegistrationEmail) {
+      _errorMessage = 'El correo no coincide con el que usaste al registrarte.';
+      return false;
+    }
+    if (registrationCodeResendSeconds > 0) return true;
+    try {
+      final response = await _apiClient.dio.post(
+        ApiConstants.registrationEmailRequest,
+        data: {'email': normalizedEmail},
+      );
+      final sent =
+          response.statusCode == 200 && response.data['success'] == true;
+      if (sent) _registrationCodeSentAt = DateTime.now();
+      return sent;
+    } on DioException catch (error) {
+      final responseData = error.response?.data;
+      _errorMessage = responseData is Map && responseData['message'] is String
+          ? responseData['message'] as String
+          : 'No se pudo enviar el código. Comprueba tu conexión e inténtalo nuevamente.';
+      return false;
+    } catch (error) {
+      _errorMessage =
+          'Ocurrió un error inesperado al solicitar el código: $error';
+      return false;
+    }
+  }
+
+  Future<bool> verifyRegistrationEmailCode({
+    required String email,
+    required String code,
+  }) async {
+    final normalizedEmail = email.trim().toLowerCase();
+    if (_pendingRegistrationEmail != null &&
+        normalizedEmail != _pendingRegistrationEmail) {
+      _errorMessage = 'El correo no coincide con el que usaste al registrarte.';
+      return false;
+    }
+
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final response = await _apiClient.dio.post(
+        ApiConstants.registrationEmailVerify,
+        data: {
+          'email': normalizedEmail,
+          'code': code.trim(),
+        },
+      );
+      if (response.statusCode != 200 || response.data['success'] != true) {
+        _errorMessage =
+            response.data['message'] ?? 'No se pudo verificar el código.';
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+
+      final data = response.data['data'] as Map<String, dynamic>;
+      final tokens = data['tokens'] as Map<String, dynamic>;
+      final userJson = data['usuario'] as Map<String, dynamic>;
+      final registeredUser = UserModel.fromJson(userJson);
+      final alias = _pendingRegistrationAlias;
+      _currentUser = await LocalProfileStore.applyTo(
+        registeredUser.copyWith(
+          alias: alias,
+          aliasUpdatedAt: alias.isEmpty ? null : DateTime.now(),
+        ),
+      );
+      if (alias.isNotEmpty) await LocalProfileStore.save(_currentUser!);
+
+      await SecureStorageService.saveTokens(
+        accessToken: tokens['accessToken'],
+        refreshToken: tokens['refreshToken'],
+      );
+      await SecureStorageService.saveUserRole(_currentUser!.rol);
+      await SecureStorageService.saveUserData(
+        jsonEncode(_currentUser!.toJson()),
+      );
+
+      _pendingRegistrationEmail = null;
+      _pendingRegistrationAlias = '';
+      _registrationCodeSentAt = null;
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } on DioException catch (error) {
+      final responseData = error.response?.data;
+      _errorMessage = responseData is Map && responseData['message'] is String
+          ? responseData['message'] as String
+          : 'No se pudo verificar el código. Comprueba tu conexión e inténtalo nuevamente.';
+    } catch (error) {
+      _errorMessage =
+          'Ocurrió un error inesperado al verificar el código: $error';
     }
 
     _isLoading = false;
@@ -234,6 +339,9 @@ class AuthProvider extends ChangeNotifier {
     await SecureStorageService.clearAll();
     _currentUser = null;
     _isDemoMode = false;
+    _pendingRegistrationEmail = null;
+    _pendingRegistrationAlias = '';
+    _registrationCodeSentAt = null;
     notifyListeners();
   }
 }

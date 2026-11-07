@@ -8,7 +8,10 @@ const jwt = require('jsonwebtoken');
 const { OAuth2Client } = require('google-auth-library');
 const db = require('../../config/db');
 const jwtConfig = require('../../config/jwt');
-const { sendPasswordResetCode } = require('../../services/emailService');
+const {
+  sendPasswordResetCode,
+  sendRegistrationVerificationCode,
+} = require('../../services/emailService');
 
 const googleOAuthClient = new OAuth2Client();
 
@@ -47,11 +50,40 @@ const registerPassenger = async (req, res, next) => {
     }
 
     // Verificar si el correo ya existe
-    const existingUser = await db('usuarios').where({ email: email.toLowerCase().trim() }).first();
+    const existingUser = await db('usuarios')
+      .join('roles', 'usuarios.rol_id', 'roles.id')
+      .select('usuarios.*', 'roles.codigo as rol_codigo')
+      .where({ 'usuarios.email': email.toLowerCase().trim() })
+      .first();
     if (existingUser) {
+      if (existingUser.rol_codigo === 'PASAJERO' && !existingUser.email_verificado) {
+        const existingProfile = await db('perfiles')
+          .where({ usuario_id: existingUser.id })
+          .first();
+        const sameDocument =
+          existingProfile?.numero_documento === numeroDocumento.trim();
+        const samePassword = sameDocument &&
+          await bcrypt.compare(password, existingUser.password_hash);
+
+        if (samePassword) {
+          return res.status(201).json({
+            success: true,
+            message: 'Hay un registro pendiente. Continúa con la verificación.',
+            data: {
+              usuario: {
+                id: existingUser.id,
+                email: existingUser.email,
+                rol: 'PASAJERO',
+                emailVerificado: false,
+              },
+            },
+          });
+        }
+      }
+
       return res.status(409).json({
         success: false,
-        message: 'El correo electrónico ya se encuentra registrado.',
+        message: 'El correo electrónico ya se encuentra registrado o los datos no coinciden.',
       });
     }
 
@@ -72,7 +104,7 @@ const registerPassenger = async (req, res, next) => {
           password_hash: passwordHash,
           rol_id: rolPasajero.id,
           estado: 'ACTIVO',
-          email_verificado: true,
+          email_verificado: false,
         })
         .returning('*');
 
@@ -90,18 +122,16 @@ const registerPassenger = async (req, res, next) => {
       return nuevoUsuario;
     });
 
-    const tokens = generateTokens(result, 'PASAJERO');
-
     res.status(201).json({
       success: true,
-      message: 'Registro exitoso. Ya puede utilizar SIT-Pay para pagar sus pasajes.',
+      message: 'Registro creado. Completa la verificación facial y confirma tu correo para activar la cuenta.',
       data: {
         usuario: {
           id: result.id,
           email: result.email,
           rol: 'PASAJERO',
+          emailVerificado: false,
         },
-        tokens,
       },
     });
   } catch (error) {
@@ -146,6 +176,13 @@ const login = async (req, res, next) => {
       return res.status(401).json({
         success: false,
         message: 'Credenciales incorrectas.',
+      });
+    }
+
+    if (!usuario.email_verificado) {
+      return res.status(403).json({
+        success: false,
+        message: 'Confirma tu correo electrónico para activar la cuenta.',
       });
     }
 
@@ -361,6 +398,192 @@ const logout = async (req, res, next) => {
   }
 };
 
+// 5. Enviar código de confirmación de correo para el registro
+const requestRegistrationEmailCode = async (req, res, next) => {
+  try {
+    const email = String(req.body.email || '').trim().toLowerCase();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Ingresa un correo electrónico válido.',
+      });
+    }
+
+    const usuario = await db('usuarios')
+      .join('roles', 'usuarios.rol_id', 'roles.id')
+      .select('usuarios.*', 'roles.codigo as rol_codigo')
+      .where({ 'usuarios.email': email })
+      .first();
+    if (!usuario || usuario.rol_codigo !== 'PASAJERO' || usuario.email_verificado) {
+      return res.status(400).json({
+        success: false,
+        message: 'No hay una cuenta pendiente de confirmación para este correo.',
+      });
+    }
+
+    const now = new Date();
+    const sentAt = usuario.email_verification_sent_at
+      ? new Date(usuario.email_verification_sent_at)
+      : null;
+    const secondsSinceLastSend = sentAt
+      ? Math.floor((now.getTime() - sentAt.getTime()) / 1000)
+      : 60;
+    if (secondsSinceLastSend < 60) {
+      return res.status(429).json({
+        success: false,
+        message: 'Espera antes de solicitar otro código.',
+        retryAfterSeconds: 60 - secondsSinceLastSend,
+      });
+    }
+
+    const code = crypto.randomInt(100000, 1000000).toString();
+    const codeHash = crypto.createHash('sha256').update(code).digest('hex');
+    await db('usuarios').where({ id: usuario.id }).update({
+      email_verification_code_hash: codeHash,
+      email_verification_expires_at: new Date(now.getTime() + 5 * 60 * 1000),
+      email_verification_sent_at: now,
+      email_verification_attempts: 0,
+    });
+
+    try {
+      await sendRegistrationVerificationCode({ to: usuario.email, code });
+    } catch (error) {
+      await db('usuarios')
+        .where({ id: usuario.id, email_verification_code_hash: codeHash })
+        .update({
+          email_verification_code_hash: null,
+          email_verification_expires_at: null,
+          email_verification_sent_at: null,
+          email_verification_attempts: 0,
+        });
+      throw error;
+    }
+
+    return res.json({
+      success: true,
+      message: 'Código de verificación enviado al correo.',
+      data: { expiresInSeconds: 300, resendAfterSeconds: 60 },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+// 6. Validar código y activar el registro
+const verifyRegistrationEmailCode = async (req, res, next) => {
+  try {
+    const email = String(req.body.email || '').trim().toLowerCase();
+    const code = String(req.body.code || '').trim();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !/^\d{6}$/.test(code)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Ingresa un correo válido y el código de 6 dígitos.',
+      });
+    }
+
+    const result = await db.transaction(async (trx) => {
+      const usuario = await trx('usuarios')
+        .join('roles', 'usuarios.rol_id', 'roles.id')
+        .select('usuarios.*', 'roles.codigo as rol_codigo')
+        .where({ 'usuarios.email': email })
+        .forUpdate('usuarios')
+        .first();
+
+      if (!usuario || usuario.rol_codigo !== 'PASAJERO' || usuario.email_verificado) {
+        return {
+          status: 400,
+          message: 'No hay una cuenta pendiente de confirmación para este correo.',
+        };
+      }
+
+      if (usuario.email_verification_attempts >= 5) {
+        return {
+          status: 429,
+          message: 'Se agotaron los intentos. Solicita un nuevo código.',
+        };
+      }
+
+      const expiresAt = usuario.email_verification_expires_at
+        ? new Date(usuario.email_verification_expires_at)
+        : null;
+      if (
+        !usuario.email_verification_code_hash ||
+        !expiresAt ||
+        expiresAt.getTime() <= Date.now()
+      ) {
+        return {
+          status: 400,
+          message: 'El código expiró. Solicita uno nuevo.',
+        };
+      }
+
+      const expectedHash = Buffer.from(usuario.email_verification_code_hash, 'hex');
+      const submittedHash = Buffer.from(
+        crypto.createHash('sha256').update(code).digest('hex'),
+        'hex'
+      );
+      if (
+        expectedHash.length !== submittedHash.length ||
+        !crypto.timingSafeEqual(expectedHash, submittedHash)
+      ) {
+        const attempts = usuario.email_verification_attempts + 1;
+        await trx('usuarios').where({ id: usuario.id }).update({
+          email_verification_attempts: attempts,
+        });
+        return {
+          status: attempts >= 5 ? 429 : 400,
+          message: attempts >= 5
+            ? 'Se agotaron los intentos. Solicita un nuevo código.'
+            : `El código no es correcto. Intentos restantes: ${5 - attempts}.`,
+        };
+      }
+
+      const perfil = await trx('perfiles').where({ usuario_id: usuario.id }).first();
+      const tokens = generateTokens(usuario, 'PASAJERO');
+      const refreshHash = await bcrypt.hash(tokens.refreshToken, 8);
+      await trx('usuarios').where({ id: usuario.id }).update({
+        email_verificado: true,
+        email_verification_code_hash: null,
+        email_verification_expires_at: null,
+        email_verification_sent_at: null,
+        email_verification_attempts: 0,
+        ultimo_login_at: new Date(),
+        refresh_token_hash: refreshHash,
+        updated_at: new Date(),
+      });
+
+      return {
+        status: 200,
+        tokens,
+        usuario: {
+          id: usuario.id,
+          email: usuario.email,
+          rol: usuario.rol_codigo,
+          nombres: perfil?.nombres || '',
+          apellidos: perfil?.apellidos || '',
+          fotoUrl: perfil?.foto_url || null,
+          emailVerificado: true,
+        },
+      };
+    });
+
+    if (result.status !== 200) {
+      return res.status(result.status).json({
+        success: false,
+        message: result.message,
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Correo confirmado. Tu cuenta está activa.',
+      data: { usuario: result.usuario, tokens: result.tokens },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 // 5. Recuperación de contraseña por código de correo
 const forgotPassword = async (req, res, next) => {
   try {
@@ -466,4 +689,6 @@ module.exports = {
   logout,
   forgotPassword,
   resetPassword,
+  requestRegistrationEmailCode,
+  verifyRegistrationEmailCode,
 };
