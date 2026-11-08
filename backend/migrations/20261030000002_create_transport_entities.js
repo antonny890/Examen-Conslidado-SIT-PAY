@@ -22,7 +22,7 @@ exports.up = async function (knex) {
 
   // 2. Empresas Operadoras Concesionarias
   await knex.schema.createTable('empresas', (table) => {
-    table.uuid('id').primary().defaultTo(knex.raw('uuid_generate_v4()'));
+    table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
     table.string('ruc', 11).notNullable().unique();
     table.string('razon_social', 180).notNullable();
     table.string('nombre_comercial', 120).notNullable();
@@ -43,7 +43,7 @@ exports.up = async function (knex) {
 
   // 3. Vehículos del SIT
   await knex.schema.createTable('vehiculos', (table) => {
-    table.uuid('id').primary().defaultTo(knex.raw('uuid_generate_v4()'));
+    table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
     table.string('placa', 10).notNullable().unique(); // ej. 'V7A-890' (Normalizado mayúsculas)
     table
       .uuid('empresa_id')
@@ -76,7 +76,7 @@ exports.up = async function (knex) {
 
   // 4. Choferes vinculados a una placa fija
   await knex.schema.createTable('choferes', (table) => {
-    table.uuid('id').primary().defaultTo(knex.raw('uuid_generate_v4()'));
+    table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
     table
       .uuid('usuario_id')
       .notNullable()

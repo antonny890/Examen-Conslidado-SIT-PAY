@@ -4,9 +4,9 @@
 const express = require('express');
 const router = express.Router();
 const profileController = require('./profile.controller');
-const authenticateFirebaseToken = require('../../middlewares/auth');
+const authenticateAccessToken = require('../../middlewares/auth');
 
-router.use(authenticateFirebaseToken);
+router.use(authenticateAccessToken);
 
 router.get('/', profileController.getProfile);
 router.put('/', profileController.updateProfile);

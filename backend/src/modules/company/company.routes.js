@@ -4,10 +4,10 @@
 const express = require('express');
 const router = express.Router();
 const companyController = require('./company.controller');
-const authenticateFirebaseToken = require('../../middlewares/auth');
+const authenticateAccessToken = require('../../middlewares/auth');
 const authorizeRoles = require('../../middlewares/rbac');
 
-router.use(authenticateFirebaseToken);
+router.use(authenticateAccessToken);
 router.use(authorizeRoles('ADMIN_EMPRESA', 'SUPER_ADMIN'));
 
 router.get('/dashboard', companyController.getCompanyDashboard);

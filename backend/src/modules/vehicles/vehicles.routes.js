@@ -4,10 +4,10 @@
 const express = require('express');
 const router = express.Router();
 const vehiclesController = require('./vehicles.controller');
-const authenticateFirebaseToken = require('../../middlewares/auth');
+const authenticateAccessToken = require('../../middlewares/auth');
 const authorizeRoles = require('../../middlewares/rbac');
 
-router.use(authenticateFirebaseToken);
+router.use(authenticateAccessToken);
 
 router.get('/', vehiclesController.getVehicles);
 router.get('/:id/qr', vehiclesController.getVehicleQR);

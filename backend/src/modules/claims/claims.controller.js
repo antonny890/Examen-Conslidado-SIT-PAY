@@ -6,7 +6,7 @@ const {
   listCollection,
   queryCollection,
   timestampToDate,
-} = require('../../services/firestoreData');
+} = require('../../services/postgresData');
 
 const companyIncidentTypes = new Set([
   'COBRO_INDEBIDO',

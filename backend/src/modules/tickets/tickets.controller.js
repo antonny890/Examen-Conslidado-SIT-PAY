@@ -2,7 +2,7 @@ const {
   getDocument,
   queryCollection,
   timestampToDate,
-} = require('../../services/firestoreData');
+} = require('../../services/postgresData');
 
 const dateDescending = (left, right) =>
   (timestampToDate(right.fecha_pago)?.getTime() || 0) -

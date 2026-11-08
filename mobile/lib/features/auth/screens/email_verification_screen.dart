@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -20,8 +18,6 @@ class EmailVerificationScreen extends StatefulWidget {
 class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
   final _codeController = TextEditingController();
   final _codeFocusNode = FocusNode();
-  Timer? _resendTimer;
-  int _resendSeconds = 0;
   bool _isSending = false;
   bool _isVerifying = false;
   bool _initialRequestStarted = false;
@@ -41,7 +37,6 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
 
   @override
   void dispose() {
-    _resendTimer?.cancel();
     _codeController.dispose();
     _codeFocusNode.dispose();
     super.dispose();
@@ -55,24 +50,8 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
     return '$visiblePrefix${'*' * (name.length - visiblePrefix.length)}@${parts[1]}';
   }
 
-  void _startResendTimer([int seconds = 60]) {
-    _resendTimer?.cancel();
-    setState(() => _resendSeconds = seconds);
-    if (seconds <= 0) return;
-    _resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) {
-        timer.cancel();
-      } else if (_resendSeconds <= 1) {
-        timer.cancel();
-        setState(() => _resendSeconds = 0);
-      } else {
-        setState(() => _resendSeconds--);
-      }
-    });
-  }
-
   Future<void> _sendCode() async {
-    if (_isSending || _resendSeconds > 0) return;
+    if (_isSending) return;
     setState(() {
       _isSending = true;
       _errorMessage = null;
@@ -80,18 +59,18 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
     });
 
     final auth = context.read<AuthProvider>();
-    final codeWasAlreadySent = auth.hasPendingRegistrationCode;
     final sent = await auth.requestRegistrationEmailCode(widget.email);
     if (!mounted) return;
     if (sent) {
-      _codeController.clear();
-      _startResendTimer(auth.registrationCodeResendSeconds);
+      final autoCode = auth.registrationAutoCode;
+      if (autoCode != null) _codeController.text = autoCode;
       setState(() {
-        _infoMessage = codeWasAlreadySent
-            ? 'El código anterior sigue vigente. Revisa tu correo.'
-            : 'Enviamos un código a tu correo.';
+        _infoMessage = autoCode == null
+            ? 'Enviamos un código a tu correo.'
+            : 'Confirmando automáticamente el correo en modo de desarrollo.';
         _isSending = false;
       });
+      if (autoCode != null) await _verifyCode();
     } else {
       setState(() {
         _errorMessage = auth.errorMessage ??
@@ -237,7 +216,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                       child: TextField(
                         controller: _codeController,
                         focusNode: _codeFocusNode,
-                        autofocus: true,
+                        autofocus: false,
                         keyboardType: TextInputType.number,
                         textInputAction: TextInputAction.done,
                         inputFormatters: [
@@ -270,15 +249,9 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            TextButton(
-              onPressed: _resendSeconds > 0 || _isSending ? null : _sendCode,
-              child: Text(
-                _isSending
-                    ? 'Enviando código...'
-                    : _resendSeconds > 0
-                        ? 'Reenviar código en 00:${_resendSeconds.toString().padLeft(2, '0')}'
-                        : 'Reenviar código',
-              ),
+            const TextButton(
+              onPressed: null,
+              child: Text('Reenvío deshabilitado'),
             ),
             if (_errorMessage != null) ...[
               const SizedBox(height: 10),

@@ -5,7 +5,7 @@ const express = require('express');
 const router = express.Router();
 const authController = require('./auth.controller');
 const dniController = require('./dni.controller');
-const authenticateFirebaseToken = require('../../middlewares/auth');
+const authenticateAccessToken = require('../../middlewares/auth');
 const { authLimiter } = require('../../middlewares/rateLimiter');
 
 router.post('/register', authLimiter, authController.registerPassenger);
@@ -16,7 +16,7 @@ router.post('/login', authLimiter, authController.login);
 router.post('/google', authLimiter, authController.loginWithGoogle);
 router.post('/google/passenger', authLimiter, authController.googlePassengerAuth);
 router.post('/refresh', authController.refreshToken);
-router.post('/logout', authenticateFirebaseToken, authController.logout);
+router.post('/logout', authenticateAccessToken, authController.logout);
 router.post('/forgot-password', authLimiter, authController.forgotPassword);
 router.post('/reset-password', authLimiter, authController.resetPassword);
 

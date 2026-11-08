@@ -8,7 +8,7 @@
 exports.up = async function (knex) {
   // 1. Notificaciones push/in-app para usuarios
   await knex.schema.createTable('notificaciones', (table) => {
-    table.uuid('id').primary().defaultTo(knex.raw('uuid_generate_v4()'));
+    table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
     table
       .uuid('usuario_id')
       .notNullable()
@@ -27,7 +27,7 @@ exports.up = async function (knex) {
 
   // 2. Registro de Auditoría (Logs inmutables de acciones sensibles)
   await knex.schema.createTable('auditoria_logs', (table) => {
-    table.uuid('id').primary().defaultTo(knex.raw('uuid_generate_v4()'));
+    table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
     table
       .uuid('usuario_id')
       .nullable()

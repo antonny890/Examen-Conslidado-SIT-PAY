@@ -2,7 +2,7 @@
 
 ## Google sign-in setup
 
-Google sign-in uses Google OAuth directly; Firebase is not required. Create an
+Google sign-in uses Google OAuth directly. Create an
 Android OAuth client using the app package name and signing-certificate SHA-1,
 and a Web OAuth client for the ID token audience. Set `GOOGLE_CLIENT_ID` in the
 backend environment to the Web client ID, and pass the same ID to Flutter:
@@ -19,8 +19,8 @@ The backend validates the Google ID token before login or account creation.
 New passenger accounts must still accept the data and DNI-query consents,
 verify their DNI, may provide a phone number, and complete the app's local
 face/liveness check. The verified Google email replaces the app's email-code
-step for this flow. Google account linking is stored in Firestore and does not
-require running the historical Knex/PostgreSQL migrations.
+step for this flow. Google account status and user profiles are stored in
+Supabase Auth and PostgreSQL. Run the backend migrations before using the flow.
 
 ## Backend networking
 

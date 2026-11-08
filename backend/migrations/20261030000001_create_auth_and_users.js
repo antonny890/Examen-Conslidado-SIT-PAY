@@ -3,15 +3,12 @@
  * Cumplimiento Ley 29733 (Protección de Datos Personales):
  * - Consentimiento explícito de tratamiento de datos
  * - Minimización de datos
- * - Borrado lógico (soft-delete) para auditoría
+ * - Supabase Auth mantiene credenciales; PostgreSQL conserva perfiles y roles
  *
  * @param { import("knex").Knex } knex
  * @returns { Promise<void> }
  */
 exports.up = async function (knex) {
-  // Extensión para generación de UUIDs nativos en PostgreSQL si está disponible
-  await knex.raw('CREATE EXTENSION IF NOT EXISTS "uuid-ossp";');
-
   // 1. Tabla de Roles (RBAC)
   await knex.schema.createTable('roles', (table) => {
     table.increments('id').primary();
@@ -23,9 +20,8 @@ exports.up = async function (knex) {
 
   // 2. Tabla de Usuarios (Credenciales y Seguridad)
   await knex.schema.createTable('usuarios', (table) => {
-    table.uuid('id').primary().defaultTo(knex.raw('uuid_generate_v4()'));
+    table.uuid('id').primary().references('id').inTable('auth.users').onDelete('CASCADE');
     table.string('email', 150).notNullable().unique();
-    table.string('password_hash', 255).notNullable();
     table
       .integer('rol_id')
       .unsigned()
@@ -34,11 +30,14 @@ exports.up = async function (knex) {
       .inTable('roles')
       .onDelete('RESTRICT')
       .onUpdate('CASCADE');
+    table.string('rol_codigo', 30).notNullable();
+    table.string('rol_nombre', 50).notNullable();
     table.string('estado', 20).notNullable().defaultTo('ACTIVO'); // ACTIVO, INACTIVO, BLOQUEADO
     table.boolean('email_verificado').notNullable().defaultTo(false);
-    table.string('refresh_token_hash', 255).nullable();
+    table.boolean('google_connected').notNullable().defaultTo(false);
     table.string('token_recuperacion', 255).nullable();
     table.timestamp('expiracion_recuperacion').nullable();
+    table.timestamp('token_invalid_before').nullable();
     table.timestamp('ultimo_login_at').nullable();
     table.timestamp('deleted_at').nullable();
     table.timestamps(true, true);
@@ -50,7 +49,7 @@ exports.up = async function (knex) {
 
   // 3. Tabla de Perfiles (Datos personales bajo consentimiento Ley 29733)
   await knex.schema.createTable('perfiles', (table) => {
-    table.uuid('id').primary().defaultTo(knex.raw('uuid_generate_v4()'));
+    table.uuid('id').primary().references('id').inTable('usuarios').onDelete('CASCADE');
     table
       .uuid('usuario_id')
       .notNullable()
@@ -61,17 +60,20 @@ exports.up = async function (knex) {
       .onUpdate('CASCADE');
     table.string('nombres', 100).notNullable();
     table.string('apellidos', 100).notNullable();
-    table.string('tipo_documento', 10).notNullable().defaultTo('DNI'); // DNI, CE
-    table.string('numero_documento', 20).notNullable();
+    table.string('tipo_documento', 10).nullable().defaultTo('DNI'); // DNI, CE
+    table.string('numero_documento', 20).nullable();
     table.string('telefono', 20).nullable();
     table.text('foto_url').nullable();
+    table.string('foto_storage_path', 500).nullable();
+    table.string('alias', 40).nullable();
+    table.jsonb('identidad').nullable();
     // Requisito Ley 29733
     table.boolean('consentimiento_datos').notNullable().defaultTo(false);
     table.timestamp('fecha_consentimiento').nullable();
     table.timestamps(true, true);
 
     table.index(['usuario_id']);
-    table.index(['numero_documento']);
+    table.unique(['tipo_documento', 'numero_documento']);
   });
 };
 

@@ -1,6 +1,13 @@
 require('dotenv').config();
-const { db } = require('../src/config/firebase');
+const db = require('../src/config/postgres');
 const { createUserAccount, findUserByEmail } = require('../src/services/userService');
+
+const roles = [
+  ['SUPER_ADMIN', 'Super Administrador'],
+  ['ADMIN_EMPRESA', 'Administrador de Empresa'],
+  ['CHOFER', 'Chofer'],
+  ['PASAJERO', 'Pasajero'],
+];
 
 const businessUnits = [
   ['C2', 'Cono Norte - Cerro Colorado', 'Rutas troncales y alimentadoras Cono Norte hacia el Cercado', '#E53E3E'],
@@ -34,13 +41,18 @@ const requireInitialAdmin = () => {
 const seed = async () => {
   requireInitialAdmin();
   const now = new Date();
+
+  for (const [code, name] of roles) {
+    const exists = await db('roles').where({ codigo: code }).first();
+    if (!exists) await db('roles').insert({ codigo: code, nombre: name });
+  }
+
   for (const [code, name, description, color] of businessUnits) {
-    const reference = db.collection('unidades_negocio').doc(code);
-    const snapshot = await reference.get();
-    if (!snapshot.exists) {
-      await reference.create({
+    const exists = await db('unidades_negocio').where({ codigo: code }).first();
+    if (!exists) {
+      await db('unidades_negocio').insert({
         codigo: code,
-        nombre,
+        nombre: name,
         descripcion: description,
         color_identificador: color,
         created_at: now,
@@ -51,7 +63,6 @@ const seed = async () => {
 
   const fares = [
     {
-      id: 'normal',
       nombre: 'Tarifa Normal',
       tipo_pasajero: 'NORMAL',
       monto: 1.00,
@@ -60,12 +71,11 @@ const seed = async () => {
       hora_fin: '23:59:59',
       dias_semana_aplicables: ['DOMINGO', 'LUNES', 'MARTES', 'MIERCOLES', 'JUEVES', 'VIERNES', 'SABADO'],
       solo_dias_laborables: false,
-      vigencia_inicio: new Date().toISOString().slice(0, 10),
+      vigencia_inicio: now.toISOString().slice(0, 10),
       activo: true,
     },
     {
-      id: 'universitaria',
-      nombre: 'Medio Pasaje Universitario (Ley 26271: 5:00 a 24:00)',
+      nombre: 'Medio Pasaje Universitario',
       tipo_pasajero: 'UNIVERSITARIA',
       monto: 0.50,
       porcentaje_descuento: 50,
@@ -73,16 +83,15 @@ const seed = async () => {
       hora_fin: '23:59:59',
       dias_semana_aplicables: ['LUNES', 'MARTES', 'MIERCOLES', 'JUEVES', 'VIERNES', 'SABADO'],
       solo_dias_laborables: true,
-      vigencia_inicio: new Date().toISOString().slice(0, 10),
+      vigencia_inicio: now.toISOString().slice(0, 10),
       activo: true,
     },
   ];
-  for (const { id, ...fare } of fares) {
-    const reference = db.collection('tarifas').doc(id);
-    const snapshot = await reference.get();
-    if (!snapshot.exists) {
-      await reference.create({ ...fare, created_at: now, updated_at: now });
-    }
+  for (const fare of fares) {
+    const exists = await db('tarifas')
+      .where({ tipo_pasajero: fare.tipo_pasajero, activo: true })
+      .first();
+    if (!exists) await db('tarifas').insert({ ...fare, created_at: now, updated_at: now });
   }
 
   const email = process.env.INITIAL_SUPER_ADMIN_EMAIL.trim().toLowerCase();
@@ -94,6 +103,7 @@ const seed = async () => {
     console.log('La cuenta inicial SUPER_ADMIN ya existe; no se modificó.');
     return;
   }
+
   await createUserAccount({
     email,
     password: process.env.INITIAL_SUPER_ADMIN_PASSWORD,
@@ -109,10 +119,12 @@ const seed = async () => {
       fecha_consentimiento: now,
     },
   });
-  console.log('Se crearon las unidades de negocio, tarifas base y la cuenta inicial SUPER_ADMIN.');
+  console.log('Se crearon los roles, las unidades de negocio, las tarifas base y la cuenta inicial SUPER_ADMIN.');
 };
 
-seed().catch((error) => {
-  console.error('No se pudo completar el seed de Firebase:', error.message);
-  process.exitCode = 1;
-});
+seed()
+  .catch((error) => {
+    console.error('No se pudo completar el seed de Supabase:', error.message);
+    process.exitCode = 1;
+  })
+  .finally(() => db.destroy());

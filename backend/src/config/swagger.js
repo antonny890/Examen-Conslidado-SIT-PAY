@@ -33,7 +33,7 @@ SIT-Pay no almacena dinero ni mantiene saldos. Los pagos de esta versión son si
       BearerAuth: {
         type: 'http',
         scheme: 'bearer',
-        bearerFormat: 'Firebase ID Token',
+        bearerFormat: 'Supabase access token',
         description: 'Ingrese su token JWT de autenticación Bearer (obtenido al iniciar sesión).',
       },
     },
@@ -174,7 +174,7 @@ SIT-Pay no almacena dinero ni mantiene saldos. Los pagos de esta versión son si
         summary: 'Inicio de sesión para todos los roles (Pasajero, Chofer, Admin Empresa, Super Admin)',
         requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/LoginRequest' } } } },
         responses: {
-          200: { description: 'Login exitoso, devuelve Firebase ID/refresh tokens y perfil' },
+          200: { description: 'Login exitoso, devuelve tokens de acceso/renovación y perfil' },
           401: { description: 'Credenciales inválidas' },
           403: { description: 'Cuenta inactiva o correo pendiente de confirmación' },
         },
@@ -199,7 +199,7 @@ SIT-Pay no almacena dinero ni mantiene saldos. Los pagos de esta versión son si
             },
           },
           responses: {
-            200: { description: 'Login exitoso, devuelve Firebase ID/refresh tokens y perfil administrativo' },
+            200: { description: 'Login exitoso, devuelve tokens de acceso/renovación y perfil administrativo' },
             403: { description: 'La cuenta Google no corresponde a una cuenta administrativa activa de SIT-Pay' },
             503: { description: 'Inicio con Google no configurado' },
           },
@@ -308,7 +308,7 @@ SIT-Pay no almacena dinero ni mantiene saldos. Los pagos de esta versión son si
       post: {
         tags: ['Autenticación'],
         summary: 'Consultar nombre asociado a un DNI mediante Migo',
-        description: 'El backend mantiene el token Migo fuera de la aplicación móvil y persiste la respuesta del proveedor en Firestore. La consulta no equivale a una verificación oficial de identidad.',
+        description: 'El backend mantiene el token Migo fuera de la aplicación móvil y persiste la respuesta del proveedor en PostgreSQL. La consulta no equivale a una verificación oficial de identidad.',
         security: [],
         requestBody: {
           required: true,

@@ -1,12 +1,11 @@
 const crypto = require('node:crypto');
-const { FieldValue } = require('firebase-admin/firestore');
 const {
   createDocument,
   db,
   queryCollection,
   timestampToDate,
   writeNotification,
-} = require('../../services/firestoreData');
+} = require('../../services/postgresData');
 const { sendInstitutionalVerificationCode } = require('../../services/emailService');
 
 const ALLOWED_DOMAINS = (process.env.ALLOWED_EDU_DOMAINS || 'continental.edu.pe,unsa.edu.pe,ucsm.edu.pe,utp.edu.pe')
@@ -69,7 +68,7 @@ const requestByEmail = async (req, res, next) => {
       await db.collection('solicitudes_preferenciales').doc(request.id).update({
         estado: 'RECHAZADA',
         observacion_revision: 'No se pudo entregar el código al correo institucional.',
-        codigo_otp_hash: FieldValue.delete(),
+        codigo_otp_hash: null,
         updated_at: new Date(),
       });
       return next(error);
@@ -116,7 +115,7 @@ const verifyEmailCode = async (req, res, next) => {
       fecha_vencimiento: validUntil,
       fecha_revision_at: new Date(),
       observacion_revision: 'Acreditado automáticamente mediante validación de correo institucional',
-      codigo_otp_hash: FieldValue.delete(),
+      codigo_otp_hash: null,
       updated_at: new Date(),
     });
     await writeNotification({

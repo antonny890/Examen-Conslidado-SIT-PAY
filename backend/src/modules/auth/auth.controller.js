@@ -1,8 +1,8 @@
 const crypto = require('node:crypto');
 const { OAuth2Client } = require('google-auth-library');
-const { FieldValue } = require('firebase-admin/firestore');
-const { auth, db } = require('../../config/firebase');
-const firebaseAuth = require('../../services/firebaseAuthService');
+const { auth } = require('../../services/supabaseAuthService');
+const { db, getDocument } = require('../../services/postgresData');
+const supabaseAuth = require('../../services/supabaseAuthService');
 const {
   createUserAccount,
   deleteUserAccount,
@@ -13,11 +13,6 @@ const {
   lookupDniName,
   parseDniName,
 } = require('../../services/dniService');
-const {
-  sendPasswordResetCode,
-  sendRegistrationVerificationCode,
-} = require('../../services/emailService');
-
 const googleOAuthClient = new OAuth2Client();
 const COLLECTION = 'usuarios';
 const PROFILES = 'perfiles';
@@ -28,8 +23,7 @@ const normalizeEmail = (email) =>
 const getUserByEmail = findUserByEmail;
 
 const getProfile = async (uid) => {
-  const snapshot = await db.collection(PROFILES).doc(uid).get();
-  return snapshot.exists ? snapshot.data() : null;
+  return getDocument(PROFILES, uid);
 };
 
 const saveDniLookup = async ({ dni, fullName, identity, userProvided = null, uid = null }) => {
@@ -82,9 +76,7 @@ const reserveDni = async (dni) => {
   await db.runTransaction(async (transaction) => {
     const snapshot = await transaction.get(reference);
     const current = snapshot.exists ? snapshot.data() : {};
-    const reservationExpiresAt = current.reservation_expires_at?.toDate
-      ? current.reservation_expires_at.toDate()
-      : new Date(current.reservation_expires_at || 0);
+    const reservationExpiresAt = new Date(current.reservation_expires_at || 0);
     if (current.usuario_id ||
         (current.reservation_id && reservationExpiresAt.getTime() > Date.now())) {
       const conflict = new Error('DNI_ALREADY_REGISTERED');
@@ -105,8 +97,8 @@ const releaseDniReservation = async ({ reference, reservationId }) => {
     const snapshot = await transaction.get(reference);
     if (snapshot.exists && snapshot.data().reservation_id === reservationId) {
       transaction.update(reference, {
-        reservation_id: FieldValue.delete(),
-        reservation_expires_at: FieldValue.delete(),
+        reservation_id: null,
+        reservation_expires_at: null,
         updated_at: new Date(),
       });
     }
@@ -123,19 +115,17 @@ const linkDniToUser = async ({ reference, reservationId, uid }) => {
     }
     transaction.update(reference, {
       usuario_id: uid,
-      reservation_id: FieldValue.delete(),
-      reservation_expires_at: FieldValue.delete(),
+      reservation_id: null,
+      reservation_expires_at: null,
       updated_at: new Date(),
     });
   });
 };
 
 const issueSession = async (uid) => {
-  const tokenResult = await firebaseAuth.signInWithCustomToken(uid);
-  return {
-    accessToken: tokenResult.idToken,
-    refreshToken: tokenResult.refreshToken,
-  };
+  const user = await getDocument(COLLECTION, uid);
+  if (!user?.email) throw new Error('No se encontró el correo de la cuenta para iniciar sesión.');
+  return supabaseAuth.issueSession(user.email);
 };
 
 const getSessionUser = async (user, picture = null) => {
@@ -201,7 +191,7 @@ const getSessionUser = async (user, picture = null) => {
     empresaActiva: company?.activo ?? null,
     estado: user.estado,
     emailVerificado: user.email_verificado === true,
-    googleConnected: Boolean(user.google_subject),
+    googleConnected: user.google_connected === true,
     ...(driverInfo ? { choferInfo: driverInfo } : {}),
   };
 };
@@ -258,19 +248,11 @@ const registerPassenger = async (req, res, next) => {
     const existing = await getUserByEmail(normalizedEmail);
     if (existing) {
       if (existing.rol_codigo === 'PASAJERO' && existing.email_verificado !== true) {
-        try {
-          await firebaseAuth.signInWithPassword(normalizedEmail, password);
-          return res.status(201).json({
-            success: true,
-            message: 'Hay un registro pendiente. Continúa con la verificación.',
-            data: { usuario: { id: existing.id, email: normalizedEmail, rol: 'PASAJERO', emailVerificado: false } },
-          });
-        } catch {
-          return res.status(409).json({
-            success: false,
-            message: 'El correo electrónico ya se encuentra registrado o los datos no coinciden.',
-          });
-        }
+        return res.status(201).json({
+          success: true,
+          message: 'Hay un registro pendiente. Continúa con la verificación.',
+          data: { usuario: { id: existing.id, email: normalizedEmail, rol: 'PASAJERO', emailVerificado: false } },
+        });
       }
       return res.status(409).json({ success: false, message: 'El correo electrónico ya se encuentra registrado.' });
     }
@@ -360,10 +342,15 @@ const login = async (req, res, next) => {
 
     let tokenResult;
     try {
-      tokenResult = await firebaseAuth.signInWithPassword(email, password);
+      tokenResult = await supabaseAuth.signInWithPassword(email, password);
     } catch (error) {
-      if (error.firebaseCode === 'EMAIL_NOT_FOUND' || error.firebaseCode === 'INVALID_PASSWORD' ||
-          error.firebaseCode === 'INVALID_LOGIN_CREDENTIALS') {
+      if (error.code === 'EMAIL_NOT_VERIFIED') {
+        return res.status(403).json({
+          success: false,
+          message: 'Confirma tu correo electrónico para activar la cuenta.',
+        });
+      }
+      if (error.code === 'INVALID_LOGIN_CREDENTIALS') {
         return res.status(401).json({ success: false, message: 'Credenciales incorrectas.' });
       }
       throw error;
@@ -437,7 +424,7 @@ const loginWithGoogle = async (req, res, next) => {
     }
     await auth.updateUser(user.id, { emailVerified: true });
     await db.collection(COLLECTION).doc(user.id).set({
-      google_subject: googleAccount.sub,
+      google_connected: true,
       email_verificado: true,
       ultimo_login_at: new Date(),
       updated_at: new Date(),
@@ -448,7 +435,7 @@ const loginWithGoogle = async (req, res, next) => {
       data: {
         usuario: await getSessionUser({
           ...user,
-          google_subject: googleAccount.sub,
+          google_connected: true,
           email_verificado: true,
         }, googleAccount.picture),
         tokens: await issueSession(user.id),
@@ -477,7 +464,7 @@ const googlePassengerAuth = async (req, res, next) => {
         return res.status(403).json({ success: false, message: 'La cuenta requiere confirmar el correo electrónico.' });
       }
       await auth.updateUser(existing.id, { emailVerified: true });
-      const update = { google_subject: googleAccount.sub, ultimo_login_at: new Date(), updated_at: new Date() };
+      const update = { google_connected: true, ultimo_login_at: new Date(), updated_at: new Date() };
       const profile = await getProfile(existing.id);
       if (!profile?.foto_url && googleAccount.picture) {
         await db.collection(PROFILES).doc(existing.id).set({ foto_url: googleAccount.picture }, { merge: true });
@@ -596,29 +583,32 @@ const googlePassengerAuth = async (req, res, next) => {
   }
 };
 
-const refreshToken = async (req, res) => {
+const refreshToken = async (req, res, next) => {
   const refreshTokenValue = req.body?.refreshToken;
   if (typeof refreshTokenValue !== 'string' || !refreshTokenValue) {
     return res.status(400).json({ success: false, message: 'Refresh token requerido.' });
   }
   try {
-    const tokens = await firebaseAuth.refreshIdToken(refreshTokenValue);
+    const tokens = await supabaseAuth.refreshSession(refreshTokenValue);
     return res.json({
       success: true,
       message: 'Token renovado con éxito.',
-      data: { tokens: { accessToken: tokens.id_token, refreshToken: tokens.refresh_token } },
+      data: { tokens },
     });
   } catch (error) {
     if (error.statusCode === 503) {
       return res.status(503).json({ success: false, message: error.message });
     }
-    return res.status(401).json({ success: false, message: 'Refresh token inválido o expirado.' });
+    if (error.statusCode && error.statusCode < 500) {
+      return res.status(401).json({ success: false, message: 'Refresh token inválido o expirado.' });
+    }
+    return next(error);
   }
 };
 
 const logout = async (req, res, next) => {
   try {
-    await auth.revokeRefreshTokens(req.user.id);
+    if (req.authToken) await supabaseAuth.revokeSession(req.authToken);
     return res.json({ success: true, message: 'Sesión cerrada correctamente.' });
   } catch (error) {
     next(error);
@@ -635,6 +625,9 @@ const requestRegistrationEmailCode = async (req, res, next) => {
     if (!user || user.rol_codigo !== 'PASAJERO' || user.email_verificado === true) {
       return res.status(400).json({ success: false, message: 'No hay una cuenta pendiente de confirmación para este correo.' });
     }
+    const autoFillEnabled =
+      process.env.NODE_ENV === 'development' &&
+      process.env.REGISTRATION_EMAIL_DEV_AUTOFILL === 'true';
     const now = new Date();
     const sentAt = user.email_verification_sent_at?.toDate
       ? user.email_verification_sent_at.toDate()
@@ -642,37 +635,38 @@ const requestRegistrationEmailCode = async (req, res, next) => {
         ? new Date(user.email_verification_sent_at)
         : null;
     const elapsed = sentAt ? Math.floor((now.getTime() - sentAt.getTime()) / 1000) : 60;
-    if (elapsed < 60) {
+    if (!autoFillEnabled && elapsed < 60) {
       return res.status(429).json({
         success: false,
         message: 'Espera antes de solicitar otro código.',
         retryAfterSeconds: 60 - elapsed,
       });
     }
-    const code = crypto.randomInt(100000, 1000000).toString();
-    const codeHash = crypto.createHash('sha256').update(code).digest('hex');
+    let code;
+    if (autoFillEnabled) {
+      code = crypto.randomInt(100000, 1000000).toString();
+    } else {
+      await supabaseAuth.requestSignupOtp(email);
+    }
     await db.collection(COLLECTION).doc(user.id).update({
-      email_verification_code_hash: codeHash,
+      email_verification_code_hash: code
+        ? crypto.createHash('sha256').update(code).digest('hex')
+        : null,
       email_verification_expires_at: new Date(now.getTime() + 5 * 60 * 1000),
       email_verification_sent_at: now,
       email_verification_attempts: 0,
       updated_at: now,
     });
-    try {
-      await sendRegistrationVerificationCode({ to: email, code });
-    } catch (error) {
-      await db.collection(COLLECTION).doc(user.id).update({
-        email_verification_code_hash: FieldValue.delete(),
-        email_verification_expires_at: FieldValue.delete(),
-        email_verification_sent_at: FieldValue.delete(),
-        email_verification_attempts: 0,
-      });
-      throw error;
-    }
     return res.json({
       success: true,
-      message: 'Código de verificación enviado al correo.',
-      data: { expiresInSeconds: 300, resendAfterSeconds: 60 },
+      message: autoFillEnabled
+        ? 'Código de demostración generado para desarrollo.'
+        : 'Código de verificación enviado al correo.',
+      data: {
+        expiresInSeconds: 300,
+        resendAfterSeconds: 60,
+        ...(autoFillEnabled ? { simulated: true, autoCode: code } : {}),
+      },
     });
   } catch (error) {
     return next(error);
@@ -693,31 +687,53 @@ const verifyRegistrationEmailCode = async (req, res, next) => {
     if ((user.email_verification_attempts || 0) >= 5) {
       return res.status(429).json({ success: false, message: 'Se agotaron los intentos. Solicita un nuevo código.' });
     }
-    const expiresAt = user.email_verification_expires_at?.toDate
-      ? user.email_verification_expires_at.toDate()
-      : new Date(user.email_verification_expires_at || 0);
-    if (!user.email_verification_code_hash || expiresAt.getTime() <= Date.now()) {
+    const expiresAt = new Date(user.email_verification_expires_at || 0);
+    if (expiresAt.getTime() <= Date.now()) {
       return res.status(400).json({ success: false, message: 'El código expiró. Solicita uno nuevo.' });
     }
-    const expectedHash = Buffer.from(user.email_verification_code_hash, 'hex');
-    const submittedHash = Buffer.from(crypto.createHash('sha256').update(code).digest('hex'), 'hex');
-    if (expectedHash.length !== submittedHash.length || !crypto.timingSafeEqual(expectedHash, submittedHash)) {
-      const attempts = (user.email_verification_attempts || 0) + 1;
-      await db.collection(COLLECTION).doc(user.id).update({ email_verification_attempts: attempts });
-      return res.status(attempts >= 5 ? 429 : 400).json({
-        success: false,
-        message: attempts >= 5
-          ? 'Se agotaron los intentos. Solicita un nuevo código.'
-          : `El código no es correcto. Intentos restantes: ${5 - attempts}.`,
-      });
+    const autoFillEnabled =
+      process.env.NODE_ENV === 'development' &&
+      process.env.REGISTRATION_EMAIL_DEV_AUTOFILL === 'true';
+    let verifiedTokens;
+    if (autoFillEnabled && user.email_verification_code_hash) {
+      const expectedHash = Buffer.from(user.email_verification_code_hash, 'hex');
+      const submittedHash = Buffer.from(crypto.createHash('sha256').update(code).digest('hex'), 'hex');
+      if (expectedHash.length === submittedHash.length && crypto.timingSafeEqual(expectedHash, submittedHash)) {
+        await auth.updateUser(user.id, { emailVerified: true });
+      } else {
+        const attempts = (user.email_verification_attempts || 0) + 1;
+        await db.collection(COLLECTION).doc(user.id).update({ email_verification_attempts: attempts });
+        return res.status(attempts >= 5 ? 429 : 400).json({
+          success: false,
+          message: attempts >= 5
+            ? 'Se agotaron los intentos. Solicita un nuevo código.'
+            : `El código no es correcto. Intentos restantes: ${5 - attempts}.`,
+        });
+      }
+    } else {
+      try {
+        const verification = await supabaseAuth.verifySignupOtp(email, code);
+        if (verification.user.id !== user.id) {
+          return res.status(400).json({ success: false, message: 'El código no pertenece a esta cuenta.' });
+        }
+        verifiedTokens = verification.tokens;
+      } catch (error) {
+        if (!error.statusCode || error.statusCode >= 500) throw error;
+        const attempts = (user.email_verification_attempts || 0) + 1;
+        await db.collection(COLLECTION).doc(user.id).update({ email_verification_attempts: attempts });
+        return res.status(attempts >= 5 ? 429 : 400).json({
+          success: false,
+          message: attempts >= 5
+            ? 'Se agotaron los intentos. Solicita un nuevo código.'
+            : `El código no es correcto. Intentos restantes: ${5 - attempts}.`,
+        });
+      }
     }
-
-    await auth.updateUser(user.id, { emailVerified: true });
     await db.collection(COLLECTION).doc(user.id).update({
       email_verificado: true,
-      email_verification_code_hash: FieldValue.delete(),
-      email_verification_expires_at: FieldValue.delete(),
-      email_verification_sent_at: FieldValue.delete(),
+      email_verification_code_hash: null,
+      email_verification_expires_at: null,
+      email_verification_sent_at: null,
       email_verification_attempts: 0,
       ultimo_login_at: new Date(),
       updated_at: new Date(),
@@ -728,7 +744,7 @@ const verifyRegistrationEmailCode = async (req, res, next) => {
       message: 'Correo confirmado. Tu cuenta está activa.',
       data: {
         usuario: await getSessionUser(updatedUser),
-        tokens: await issueSession(user.id),
+        tokens: verifiedTokens || await issueSession(user.id),
       },
     });
   } catch (error) {
@@ -744,22 +760,12 @@ const forgotPassword = async (req, res, next) => {
     const genericMessage = 'Si el correo está registrado, se enviaron las instrucciones de recuperación.';
     if (!user) return res.json({ success: true, message: genericMessage });
 
-    const code = crypto.randomInt(100000, 1000000).toString();
-    const codeHash = crypto.createHash('sha256').update(code).digest('hex');
+    await supabaseAuth.requestPasswordReset(email);
     await db.collection(COLLECTION).doc(user.id).update({
-      token_recuperacion: codeHash,
-      expiracion_recuperacion: new Date(Date.now() + 15 * 60 * 1000),
+      password_reset_sent_at: new Date(),
+      password_reset_attempts: 0,
       updated_at: new Date(),
     });
-    try {
-      await sendPasswordResetCode({ to: email, code });
-    } catch (error) {
-      await db.collection(COLLECTION).doc(user.id).update({
-        token_recuperacion: FieldValue.delete(),
-        expiracion_recuperacion: FieldValue.delete(),
-      });
-      throw error;
-    }
     return res.json({ success: true, message: genericMessage });
   } catch (error) {
     next(error);
@@ -778,19 +784,41 @@ const resetPassword = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'El código debe tener 6 dígitos y la contraseña nueva al menos 8 caracteres.' });
     }
     const user = await getUserByEmail(email);
-    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-    const expiration = user?.expiracion_recuperacion?.toDate
-      ? user.expiracion_recuperacion.toDate()
-      : new Date(user?.expiracion_recuperacion || 0);
-    if (!user || user.token_recuperacion !== tokenHash || expiration.getTime() <= Date.now()) {
+    if (!user) {
       return res.status(400).json({ success: false, message: 'Código de recuperación inválido o expirado.' });
     }
-
+    const sentAt = user.password_reset_sent_at
+      ? new Date(user.password_reset_sent_at)
+      : new Date(0);
+    if (sentAt.getTime() + 15 * 60 * 1000 <= Date.now()) {
+      return res.status(400).json({ success: false, message: 'Código de recuperación inválido o expirado.' });
+    }
+    if ((user.password_reset_attempts || 0) >= 5) {
+      return res.status(429).json({ success: false, message: 'Se agotaron los intentos. Solicita un nuevo código.' });
+    }
+    let verification;
+    try {
+      verification = await supabaseAuth.verifyPasswordResetOtp(email, token);
+    } catch (error) {
+      if (!error.statusCode || error.statusCode >= 500) throw error;
+      const attempts = (user.password_reset_attempts || 0) + 1;
+      await db.collection(COLLECTION).doc(user.id).update({ password_reset_attempts: attempts });
+      return res.status(attempts >= 5 ? 429 : 400).json({
+        success: false,
+        message: attempts >= 5
+          ? 'Se agotaron los intentos. Solicita un nuevo código.'
+          : 'Código de recuperación inválido o expirado.',
+      });
+    }
+    if (verification.user.id !== user.id) {
+      return res.status(400).json({ success: false, message: 'Código de recuperación inválido o expirado.' });
+    }
     await auth.updateUser(user.id, { password: newPassword });
-    await auth.revokeRefreshTokens(user.id);
+    await supabaseAuth.revokeSession(verification.accessToken);
     await db.collection(COLLECTION).doc(user.id).update({
-      token_recuperacion: FieldValue.delete(),
-      expiracion_recuperacion: FieldValue.delete(),
+      password_reset_sent_at: null,
+      password_reset_attempts: 0,
+      token_invalid_before: new Date(),
       updated_at: new Date(),
     });
     return res.json({ success: true, message: 'Contraseña restablecida exitosamente.' });

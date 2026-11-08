@@ -3,7 +3,7 @@ const {
   getDocument,
   listCollection,
   writeAuditLog,
-} = require('../../services/firestoreData');
+} = require('../../services/postgresData');
 const { calculateApplicableFare } = require('../../services/fareEngine');
 
 const getFares = async (req, res, next) => {

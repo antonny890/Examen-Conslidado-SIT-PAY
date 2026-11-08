@@ -1,7 +1,4 @@
 const nodemailer = require('nodemailer');
-const resend = require('../config/resend');
-
-const isResendConfigured = () => Boolean(resend && process.env.RESEND_FROM);
 
 const isSmtpConfigured = () =>
   Boolean(
@@ -12,42 +9,9 @@ const isSmtpConfigured = () =>
       process.env.SMTP_PASSWORD
   );
 
-const sendEmail = async ({ to, subject, text, html }) => {
-  if (isResendConfigured()) {
-    const { error } = await resend.emails.send({
-      from: process.env.RESEND_FROM,
-      to: [to],
-      subject,
-      text,
-      html,
-    });
-    if (error) {
-      const sendError = new Error(`No se pudo enviar el correo con Resend: ${error.message}`);
-      sendError.statusCode = 502;
-      throw sendError;
-    }
-    return;
-  }
-
-  if (isSmtpConfigured()) {
-    await createTransporter().sendMail({
-      from: process.env.SMTP_FROM,
-      to,
-      subject,
-      text,
-      html,
-    });
-    return;
-  }
-
-  const error = new Error('El servicio de correo no está configurado.');
-  error.statusCode = 503;
-  throw error;
-};
-
 const createTransporter = () => {
   if (!isSmtpConfigured()) {
-    const error = new Error('El servicio de correo no está configurado.');
+    const error = new Error('Configura el SMTP del proyecto Supabase en el backend.');
     error.statusCode = 503;
     throw error;
   }
@@ -69,12 +33,13 @@ const createTransporter = () => {
 };
 
 const sendInstitutionalVerificationCode = async ({ to, code, institution }) => {
-  if (!isResendConfigured() && !isSmtpConfigured() && process.env.NODE_ENV !== 'production') {
+  if (!isSmtpConfigured() && process.env.NODE_ENV !== 'production') {
     console.info(`[SIT-Pay] Código OTP de demostración para ${to}: ${code}`);
     return;
   }
 
-  await sendEmail({
+  await createTransporter().sendMail({
+    from: process.env.SMTP_FROM,
     to,
     subject: 'Código para acreditar tu medio pasaje SIT-Pay',
     text: `Tu código de verificación para ${institution} es ${code}. Expira en 15 minutos. Si no solicitaste esta acreditación, ignora este correo.`,
@@ -82,26 +47,4 @@ const sendInstitutionalVerificationCode = async ({ to, code, institution }) => {
   });
 };
 
-const sendPasswordResetCode = async ({ to, code }) => {
-  await sendEmail({
-    to,
-    subject: 'Código para cambiar tu contraseña de SIT-Pay',
-    text: `Tu código de seguridad para cambiar la contraseña de SIT-Pay es ${code}. Expira en 15 minutos. Si no solicitaste este cambio, ignora este correo.`,
-    html: `<p>Usa este código de seguridad para cambiar tu contraseña de SIT-Pay:</p><p style="font-size:28px;font-weight:bold;letter-spacing:6px">${code}</p><p>El código expira en 15 minutos. Si no solicitaste este cambio, ignora este correo.</p>`,
-  });
-};
-
-const sendRegistrationVerificationCode = async ({ to, code }) => {
-  await sendEmail({
-    to,
-    subject: 'Confirma tu correo electrónico - SIT-Pay',
-    text: `Tu código de verificación para SIT-Pay es ${code}. Expira en 5 minutos. Si no solicitaste crear esta cuenta, ignora este correo.`,
-    html: `<p>Usa este código para confirmar tu correo electrónico en SIT-Pay:</p><p style="font-size:28px;font-weight:bold;letter-spacing:6px">${code}</p><p>El código expira en 5 minutos. Si no solicitaste crear esta cuenta, ignora este correo.</p>`,
-  });
-};
-
-module.exports = {
-  sendInstitutionalVerificationCode,
-  sendPasswordResetCode,
-  sendRegistrationVerificationCode,
-};
+module.exports = { sendInstitutionalVerificationCode };

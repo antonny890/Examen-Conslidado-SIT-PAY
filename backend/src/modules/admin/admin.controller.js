@@ -1,4 +1,5 @@
-const { auth, db } = require('../../config/firebase');
+const { auth } = require('../../services/supabaseAuthService');
+const { db } = require('../../services/postgresData');
 const {
   createDocument,
   getDocument,
@@ -6,7 +7,7 @@ const {
   queryCollection,
   timestampToDate,
   writeAuditLog,
-} = require('../../services/firestoreData');
+} = require('../../services/postgresData');
 const { createUserAccount, deleteUserAccount, findUserByEmail } = require('../../services/userService');
 
 const amount = (value) => Number(value || 0);
@@ -345,7 +346,11 @@ const toggleUserStatus = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Solo se puede cambiar el acceso a administradores de empresa.' });
     }
     await auth.updateUser(id, { disabled: status !== 'ACTIVO' });
-    await db.collection(usersCollection).doc(id).update({ estado: status, updated_at: new Date() });
+    await db.collection(usersCollection).doc(id).update({
+      estado: status,
+      ...(status === 'INACTIVO' ? { token_invalid_before: new Date() } : {}),
+      updated_at: new Date(),
+    });
     await writeAuditLog({
       usuarioId: req.user.id,
       accion: 'ESTADO_USUARIO_MODIFICADO',

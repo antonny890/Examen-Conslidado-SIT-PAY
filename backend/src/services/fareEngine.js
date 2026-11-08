@@ -1,4 +1,4 @@
-const { listCollection, queryCollection, timestampToDate } = require('./firestoreData');
+const { listCollection, queryCollection, timestampToDate } = require('./postgresData');
 
 const DAYS = {
   0: 'DOMINGO',

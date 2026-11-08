@@ -14,7 +14,7 @@ export const api = axios.create({
   },
 });
 
-// Interceptor de petición para inyectar el Firebase ID token.
+// Interceptor de petición para inyectar el JWT de Supabase Auth.
 api.interceptors.request.use(
   (config) => {
     if (localStorage.getItem('sit_pay_admin_demo') === 'true') {

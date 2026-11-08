@@ -2,8 +2,8 @@ const crypto = require('node:crypto');
 const {
   getDocument,
   queryCollection,
-} = require('../../services/firestoreData');
-const { db } = require('../../config/firebase');
+} = require('../../services/postgresData');
+const { db } = require('../../services/postgresData');
 const { calculateApplicableFare } = require('../../services/fareEngine');
 const { emitPaymentConfirmationToDriver } = require('../../sockets/socketHandler');
 

@@ -1,4 +1,5 @@
-const { auth, db } = require('../config/firebase');
+const { verifyAccessToken } = require('../services/supabaseAuthService');
+const { db } = require('../services/postgresData');
 
 let ioInstance = null;
 
@@ -11,7 +12,7 @@ const initializeSocket = (io) => {
         socket.handshake.headers?.authorization?.replace('Bearer ', '');
       if (!token) return next(new Error('Autenticación de socket requerida. Token ausente.'));
 
-      const decoded = await auth.verifyIdToken(token, true);
+      const decoded = await verifyAccessToken(token);
       const userSnapshot = await db.collection('usuarios').doc(decoded.uid).get();
       if (!userSnapshot.exists) return next(new Error('La cuenta asociada al token no existe.'));
       const user = userSnapshot.data();
@@ -34,7 +35,10 @@ const initializeSocket = (io) => {
       }
       return next();
     } catch (error) {
-      return next(new Error('Token de Firebase inválido o expirado.'));
+      if (![400, 401, 403].includes(error.statusCode)) {
+        return next(new Error('No se pudo validar la sesión con Supabase Auth.'));
+      }
+      return next(new Error('Token de acceso inválido o expirado.'));
     }
   });
 

@@ -9,7 +9,7 @@
 exports.up = async function (knex) {
   // 1. Solicitudes de Acreditación de Pasaje Preferencial
   await knex.schema.createTable('solicitudes_preferenciales', (table) => {
-    table.uuid('id').primary().defaultTo(knex.raw('uuid_generate_v4()'));
+    table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
     table
       .uuid('usuario_id')
       .notNullable()
@@ -22,7 +22,7 @@ exports.up = async function (knex) {
     
     // Método a: Correo Institucional (.edu.pe)
     table.string('correo_institucional', 150).nullable();
-    table.string('codigo_otp', 6).nullable();
+    table.string('codigo_otp_hash', 64).nullable();
     table.timestamp('codigo_otp_expira_at').nullable();
     
     // Método b: Foto del Carné
@@ -48,7 +48,7 @@ exports.up = async function (knex) {
 
   // 2. Incidencias y Reclamos del Pasajero (Ley 29571)
   await knex.schema.createTable('incidencias_reclamos', (table) => {
-    table.uuid('id').primary().defaultTo(knex.raw('uuid_generate_v4()'));
+    table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
     table.string('codigo_reclamo', 30).notNullable().unique(); // 'REC-20261030-001'
     table
       .uuid('usuario_id')

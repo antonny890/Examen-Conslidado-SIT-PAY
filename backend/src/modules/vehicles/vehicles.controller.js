@@ -5,7 +5,7 @@ const {
   listCollection,
   queryCollection,
   writeAuditLog,
-} = require('../../services/firestoreData');
+} = require('../../services/postgresData');
 const {
   generateSecureVehicleToken,
   generateQRCodeSVG,

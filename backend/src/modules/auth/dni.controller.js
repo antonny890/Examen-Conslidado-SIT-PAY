@@ -1,5 +1,5 @@
 const crypto = require('node:crypto');
-const { db } = require('../../config/firebase');
+const { db } = require('../../services/postgresData');
 const {
   DniProviderError,
   lookupDniName,

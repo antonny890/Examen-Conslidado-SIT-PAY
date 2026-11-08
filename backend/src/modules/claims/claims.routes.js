@@ -4,10 +4,10 @@
 const express = require('express');
 const router = express.Router();
 const claimsController = require('./claims.controller');
-const authenticateFirebaseToken = require('../../middlewares/auth');
+const authenticateAccessToken = require('../../middlewares/auth');
 const authorizeRoles = require('../../middlewares/rbac');
 
-router.use(authenticateFirebaseToken);
+router.use(authenticateAccessToken);
 
 router.post('/', claimsController.createClaim);
 router.get('/my-claims', claimsController.getMyClaims);

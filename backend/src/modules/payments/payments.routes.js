@@ -4,11 +4,11 @@
 const express = require('express');
 const router = express.Router();
 const paymentsController = require('./payments.controller');
-const authenticateFirebaseToken = require('../../middlewares/auth');
+const authenticateAccessToken = require('../../middlewares/auth');
 const authorizeRoles = require('../../middlewares/rbac');
 const { paymentLimiter } = require('../../middlewares/rateLimiter');
 
-router.use(authenticateFirebaseToken);
+router.use(authenticateAccessToken);
 router.use(authorizeRoles('PASAJERO'));
 
 router.post('/preview', paymentsController.previewPayment);

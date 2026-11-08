@@ -4,7 +4,7 @@ const {
   listCollection,
   queryCollection,
   timestampToDate,
-} = require('../../services/firestoreData');
+} = require('../../services/postgresData');
 const {
   createUserAccount,
   deleteUserAccount,

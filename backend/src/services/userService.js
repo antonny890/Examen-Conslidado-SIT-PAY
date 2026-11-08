@@ -1,5 +1,6 @@
 const crypto = require('node:crypto');
-const { auth, db } = require('../config/firebase');
+const db = require('../config/postgres');
+const { auth } = require('./supabaseAuthService');
 
 const ROLES = {
   SUPER_ADMIN: 'Super Administrador',
@@ -10,12 +11,10 @@ const ROLES = {
 
 const findUserByEmail = async (email) => {
   const normalizedEmail = String(email).trim().toLowerCase();
-  const snapshot = await db.collection('usuarios')
-    .where('email', '==', normalizedEmail)
-    .limit(1)
-    .get();
-  if (snapshot.empty) return null;
-  return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+  return db('usuarios')
+    .where({ email: normalizedEmail })
+    .whereNull('deleted_at')
+    .first();
 };
 
 const createUserAccount = async ({
@@ -24,70 +23,65 @@ const createUserAccount = async ({
   role,
   profile,
   emailVerified = false,
-  googleSubject = null,
   status = 'ACTIVO',
+  googleSubject = null,
 }) => {
   const normalizedEmail = String(email).trim().toLowerCase();
-  const now = new Date();
+  const roleRow = await db('roles').where({ codigo: role }).first();
+  if (!roleRow) throw new Error(`El rol ${role} no existe en PostgreSQL.`);
+
   const authUser = await auth.createUser({
     email: normalizedEmail,
-    ...(password ? { password } : {}),
+    password,
     emailVerified,
-    disabled: status !== 'ACTIVO',
   });
+  const now = new Date();
   const userDocument = {
+    id: authUser.uid,
     email: normalizedEmail,
+    rol_id: roleRow.id,
     rol_codigo: role,
-    rol_nombre: ROLES[role],
+    rol_nombre: roleRow.nombre || ROLES[role],
     estado: status,
     email_verificado: emailVerified,
-    google_subject: googleSubject,
+    google_connected: Boolean(googleSubject),
     created_at: now,
     updated_at: now,
   };
-  const emailRef = db.collection('indice_emails')
-    .doc(crypto.createHash('sha256').update(normalizedEmail).digest('hex'));
+  const emailIndex = {
+    id: crypto.createHash('sha256').update(normalizedEmail).digest('hex'),
+    usuario_id: authUser.uid,
+    email: normalizedEmail,
+    created_at: now,
+    updated_at: now,
+  };
 
   try {
-    await db.runTransaction(async (transaction) => {
-      const emailSnapshot = await transaction.get(emailRef);
-      if (emailSnapshot.exists) {
-        const conflict = new Error('EMAIL_ALREADY_REGISTERED');
-        conflict.code = 'EMAIL_ALREADY_REGISTERED';
-        throw conflict;
-      }
-      transaction.create(db.collection('usuarios').doc(authUser.uid), userDocument);
-      transaction.create(db.collection('perfiles').doc(authUser.uid), {
+    await db.transaction(async (trx) => {
+      await trx('usuarios').insert(userDocument);
+      await trx('perfiles').insert({
         ...profile,
+        id: authUser.uid,
         usuario_id: authUser.uid,
         created_at: now,
         updated_at: now,
       });
-      transaction.create(emailRef, { usuario_id: authUser.uid, email: normalizedEmail });
+      await trx('indice_emails').insert(emailIndex);
     });
   } catch (error) {
     await auth.deleteUser(authUser.uid);
+    if (error.code === '23505') {
+      const conflict = new Error('EMAIL_ALREADY_REGISTERED');
+      conflict.code = 'EMAIL_ALREADY_REGISTERED';
+      throw conflict;
+    }
     throw error;
   }
-  return { id: authUser.uid, ...userDocument };
+  return userDocument;
 };
 
 const deleteUserAccount = async (uid) => {
-  const userSnapshot = await db.collection('usuarios').doc(uid).get();
-  const email = userSnapshot.exists ? userSnapshot.data().email : null;
-  const batch = db.batch();
-  batch.delete(db.collection('usuarios').doc(uid));
-  batch.delete(db.collection('perfiles').doc(uid));
-  if (email) {
-    batch.delete(db.collection('indice_emails')
-      .doc(crypto.createHash('sha256').update(email).digest('hex')));
-  }
-  await batch.commit();
-  try {
-    await auth.deleteUser(uid);
-  } catch (error) {
-    if (error.code !== 'auth/user-not-found') throw error;
-  }
+  await auth.deleteUser(uid);
 };
 
 module.exports = { createUserAccount, deleteUserAccount, findUserByEmail };

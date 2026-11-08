@@ -20,20 +20,14 @@ class AuthProvider extends ChangeNotifier {
   String? _errorMessage;
   String? _pendingRegistrationEmail;
   String _pendingRegistrationAlias = '';
-  DateTime? _registrationCodeSentAt;
+  String? _registrationAutoCode;
 
   UserModel? get currentUser => _currentUser;
   bool get isLoading => _isLoading;
   bool get isDemoMode => _isDemoMode;
   String? get errorMessage => _errorMessage;
   bool get isAuthenticated => _currentUser != null;
-  bool get hasPendingRegistrationCode => _registrationCodeSentAt != null;
-  int get registrationCodeResendSeconds {
-    final sentAt = _registrationCodeSentAt;
-    if (sentAt == null) return 0;
-    final remaining = 60 - DateTime.now().difference(sentAt).inSeconds;
-    return remaining > 0 ? remaining : 0;
-  }
+  String? get registrationAutoCode => _registrationAutoCode;
 
   // 1. Verificar sesión persistente al abrir la app
   Future<bool> checkCurrentSession() async {
@@ -71,7 +65,7 @@ class AuthProvider extends ChangeNotifier {
     _errorMessage = null;
     _pendingRegistrationEmail = null;
     _pendingRegistrationAlias = '';
-    _registrationCodeSentAt = null;
+    _registrationAutoCode = null;
     notifyListeners();
 
     try {
@@ -218,7 +212,7 @@ class AuthProvider extends ChangeNotifier {
     _errorMessage = null;
     _pendingRegistrationEmail = null;
     _pendingRegistrationAlias = '';
-    _registrationCodeSentAt = null;
+    _registrationAutoCode = null;
     _isDemoMode = true;
     _currentUser = UserModel(
       id: asDriver ? 'demo-driver' : 'demo-passenger',
@@ -257,11 +251,9 @@ class AuthProvider extends ChangeNotifier {
   }) async {
     _isLoading = true;
     _errorMessage = null;
-    if (_pendingRegistrationEmail != email.trim().toLowerCase()) {
-      _registrationCodeSentAt = null;
-    }
     _pendingRegistrationEmail = null;
     _pendingRegistrationAlias = '';
+    _registrationAutoCode = null;
     notifyListeners();
 
     try {
@@ -309,15 +301,22 @@ class AuthProvider extends ChangeNotifier {
       _errorMessage = 'El correo no coincide con el que usaste al registrarte.';
       return false;
     }
-    if (registrationCodeResendSeconds > 0) return true;
     try {
+      _registrationAutoCode = null;
       final response = await _apiClient.dio.post(
         ApiConstants.registrationEmailRequest,
         data: {'email': normalizedEmail},
       );
       final sent =
           response.statusCode == 200 && response.data['success'] == true;
-      if (sent) _registrationCodeSentAt = DateTime.now();
+      if (sent) {
+        final responseData = response.data['data'];
+        final autoCode = responseData is Map ? responseData['autoCode'] : null;
+        _registrationAutoCode =
+            autoCode is String && RegExp(r'^\d{6}$').hasMatch(autoCode)
+                ? autoCode
+                : null;
+      }
       return sent;
     } on DioException catch (error) {
       final responseData = error.response?.data;
@@ -387,7 +386,7 @@ class AuthProvider extends ChangeNotifier {
 
       _pendingRegistrationEmail = null;
       _pendingRegistrationAlias = '';
-      _registrationCodeSentAt = null;
+      _registrationAutoCode = null;
       _isLoading = false;
       notifyListeners();
       return true;
@@ -460,7 +459,8 @@ class AuthProvider extends ChangeNotifier {
             : 'No se pudo guardar la foto en el servidor.',
       );
     }
-    await updateLocalProfile(fotoUrl: response.data['data']['fotoUrl'] as String);
+    await updateLocalProfile(
+        fotoUrl: response.data['data']['fotoUrl'] as String);
   }
 
   // 4. Cerrar Sesión
@@ -476,7 +476,7 @@ class AuthProvider extends ChangeNotifier {
     _isDemoMode = false;
     _pendingRegistrationEmail = null;
     _pendingRegistrationAlias = '';
-    _registrationCodeSentAt = null;
+    _registrationAutoCode = null;
     notifyListeners();
   }
 }

@@ -3,7 +3,7 @@ const {
   db,
   getDocument,
   queryCollection,
-} = require('../../services/firestoreData');
+} = require('../../services/postgresData');
 
 const listPaymentMethods = async (req, res, next) => {
   try {

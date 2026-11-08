@@ -1,11 +1,12 @@
 const crypto = require('node:crypto');
-const { auth, db, storage } = require('../../config/firebase');
-const { signInWithPassword } = require('../../services/firebaseAuthService');
+const { storage } = require('../../config/supabase');
+const { auth, revokeSession, signInWithPassword } = require('../../services/supabaseAuthService');
+const { db } = require('../../services/postgresData');
 const {
   getDocument,
   queryCollection,
   timestampToDate,
-} = require('../../services/firestoreData');
+} = require('../../services/postgresData');
 
 const latestFirst = (left, right) =>
   (timestampToDate(right.created_at)?.getTime() || 0) -
@@ -95,8 +96,9 @@ const updateProfilePhoto = async (req, res, next) => {
     if (!image.length || image.length > 5 * 1024 * 1024) {
       return res.status(400).json({ success: false, message: 'La imagen debe tener un tamaño máximo de 5 MB.' });
     }
-    if (!process.env.FIREBASE_STORAGE_BUCKET) {
-      return res.status(503).json({ success: false, message: 'Firebase Storage no está configurado en el servidor.' });
+    const bucketName = process.env.SUPABASE_STORAGE_BUCKET;
+    if (!bucketName) {
+      return res.status(503).json({ success: false, message: 'Supabase Storage no está configurado en el servidor.' });
     }
     const signatures = {
       'image/jpeg': image.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff])),
@@ -113,20 +115,16 @@ const updateProfilePhoto = async (req, res, next) => {
     if (!profileSnapshot.exists) {
       return res.status(404).json({ success: false, message: 'Perfil no encontrado.' });
     }
-    const bucket = storage.bucket(process.env.FIREBASE_STORAGE_BUCKET);
     const extension = mimeType === 'image/jpeg' ? 'jpg' : mimeType.split('/')[1];
     const storagePath = `profile-photos/${req.user.id}/${crypto.randomUUID()}.${extension}`;
-    const downloadToken = crypto.randomUUID();
-    await bucket.file(storagePath).save(image, {
-      resumable: false,
-      metadata: {
-        contentType: mimeType,
-        cacheControl: 'private, max-age=3600',
-        metadata: { firebaseStorageDownloadTokens: downloadToken, userId: req.user.id },
-      },
-      validation: 'crc32c',
+    const { error: uploadError } = await storage.from(bucketName).upload(storagePath, image, {
+      contentType: mimeType,
+      cacheControl: '3600',
+      upsert: false,
     });
-    const photoUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(storagePath)}?alt=media&token=${downloadToken}`;
+    if (uploadError) throw uploadError;
+    const { data: publicUrl } = storage.from(bucketName).getPublicUrl(storagePath);
+    const photoUrl = publicUrl.publicUrl;
     await profileRef.update({
       foto_url: photoUrl,
       foto_storage_path: storagePath,
@@ -134,9 +132,10 @@ const updateProfilePhoto = async (req, res, next) => {
     });
     const oldPath = profileSnapshot.data().foto_storage_path;
     if (oldPath && oldPath !== storagePath) {
-      await bucket.file(oldPath).delete({ ignoreNotFound: true });
+      const { error: deleteError } = await storage.from(bucketName).remove([oldPath]);
+      if (deleteError) throw deleteError;
     }
-    return res.json({ success: true, message: 'Foto guardada en Firebase Storage.', data: { fotoUrl: photoUrl } });
+    return res.json({ success: true, message: 'Foto guardada en Supabase Storage.', data: { fotoUrl: photoUrl } });
   } catch (error) {
     return next(error);
   }
@@ -155,7 +154,7 @@ const changePassword = async (req, res, next) => {
     try {
       await signInWithPassword(req.user.email, currentPassword);
     } catch (error) {
-      if (['INVALID_PASSWORD', 'INVALID_LOGIN_CREDENTIALS'].includes(error.firebaseCode)) {
+      if (error.code === 'INVALID_LOGIN_CREDENTIALS') {
         return res.status(400).json({ success: false, message: 'La contraseña actual no es la correcta.' });
       }
       throw error;
@@ -190,10 +189,11 @@ const registerConsent = async (req, res, next) => {
 const deactivateAccount = async (req, res, next) => {
   try {
     await auth.updateUser(req.user.id, { disabled: true });
-    await auth.revokeRefreshTokens(req.user.id);
+    if (req.authToken) await revokeSession(req.authToken);
     await db.collection('usuarios').doc(req.user.id).update({
       estado: 'INACTIVO',
       deleted_at: new Date(),
+      token_invalid_before: new Date(),
       updated_at: new Date(),
     });
     return res.json({

@@ -4,9 +4,9 @@
 const express = require('express');
 const router = express.Router();
 const ticketsController = require('./tickets.controller');
-const authenticateFirebaseToken = require('../../middlewares/auth');
+const authenticateAccessToken = require('../../middlewares/auth');
 
-router.use(authenticateFirebaseToken);
+router.use(authenticateAccessToken);
 
 router.get('/', ticketsController.getMyTickets);
 router.get('/:code', ticketsController.getTicketByCode);
