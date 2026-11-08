@@ -12,15 +12,6 @@ const errorHandler = (err, req, res, next) => {
     });
   }
 
-  // Errores de violación de unicidad en PostgreSQL (código 23505)
-  if (err.code === '23505') {
-    return res.status(409).json({
-      success: false,
-      message: 'El registro ya existe. Se detectó conflicto con un campo único duplicado.',
-      detail: err.detail,
-    });
-  }
-
   // Error genérico controlado
   const statusCode = err.statusCode || 500;
   res.status(statusCode).json({

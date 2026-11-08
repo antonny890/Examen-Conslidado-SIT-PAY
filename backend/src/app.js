@@ -20,6 +20,7 @@ const profileRoutes = require('./modules/profile/profile.routes');
 const faresRoutes = require('./modules/fares/fares.routes');
 const preferentialRoutes = require('./modules/preferential/preferential.routes');
 const paymentsRoutes = require('./modules/payments/payments.routes');
+const paymentMethodsRoutes = require('./modules/payments/paymentMethods.routes');
 const ticketsRoutes = require('./modules/tickets/tickets.routes');
 const vehiclesRoutes = require('./modules/vehicles/vehicles.routes');
 const claimsRoutes = require('./modules/claims/claims.routes');
@@ -28,12 +29,23 @@ const adminRoutes = require('./modules/admin/admin.routes');
 
 const app = express();
 const server = http.createServer(app);
+const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:3000,http://localhost:5173')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+const corsOrigin = (origin, callback) => {
+  if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+  const error = new Error('El origen no está permitido por la política CORS.');
+  error.statusCode = 403;
+  return callback(error);
+};
 
 // 1. Configuración de Socket.IO
 const io = new Server(server, {
   cors: {
-    origin: '*',
+    origin: corsOrigin,
     methods: ['GET', 'POST'],
+    credentials: true,
   },
 });
 initializeSocket(io);
@@ -47,7 +59,7 @@ app.use(
 
 app.use(
   cors({
-    origin: '*',
+    origin: corsOrigin,
     credentials: true,
   })
 );
@@ -83,6 +95,7 @@ app.use('/api/v1/profile', profileRoutes);
 app.use('/api/v1/fares', faresRoutes);
 app.use('/api/v1/preferential', preferentialRoutes);
 app.use('/api/v1/payments', paymentsRoutes);
+app.use('/api/v1/payment-methods', paymentMethodsRoutes);
 app.use('/api/v1/tickets', ticketsRoutes);
 app.use('/api/v1/vehicles', vehiclesRoutes);
 app.use('/api/v1/claims', claimsRoutes);

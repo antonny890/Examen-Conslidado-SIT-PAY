@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, Search, ShieldCheck, Bus, KeyRound } from 'lucide-react';
+import { Users, Plus, Search, KeyRound } from 'lucide-react';
 import { api } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 export const DriversPage: React.FC = () => {
+  const { user } = useAuth();
   const [drivers, setDrivers] = useState<any[]>([]);
   const [vehicles, setVehicles] = useState<any[]>([]);
+  const [companies, setCompanies] = useState<any[]>([]);
+  const [selectedCompanyId, setSelectedCompanyId] = useState(user?.empresaId || '');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [search, setSearch] = useState('');
@@ -12,7 +16,7 @@ export const DriversPage: React.FC = () => {
   // Modal registrar chofer
   const [isOpenModal, setIsOpenModal] = useState(false);
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('SitPay2026!');
+  const [password, setPassword] = useState('');
   const [nombres, setNombres] = useState('');
   const [apellidos, setApellidos] = useState('');
   const [dni, setDni] = useState('');
@@ -21,13 +25,36 @@ export const DriversPage: React.FC = () => {
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const resetCreateDriverForm = () => {
+    setEmail('');
+    setPassword('');
+    setNombres('');
+    setApellidos('');
+    setDni('');
+    setLicencia('');
+    setVehiculoId('');
+    setFormError('');
+  };
+
   useEffect(() => {
     fetchDrivers();
   }, []);
 
-  const fetchDrivers = async () => {
+  const fetchDrivers = async (companyId = selectedCompanyId) => {
     try {
-      const res = await api.get('/vehicles');
+      let activeCompanyId = companyId;
+      if (user?.rol === 'SUPER_ADMIN') {
+        const companiesResponse = await api.get('/admin/companies');
+        const activeCompanies = companiesResponse.data.data.filter((company: any) => company.activo);
+        setCompanies(activeCompanies);
+        if (!activeCompanyId || !activeCompanies.some((company: any) => company.id === activeCompanyId)) {
+          activeCompanyId = activeCompanies[0]?.id || '';
+        }
+        setSelectedCompanyId(activeCompanyId);
+      }
+      const res = await api.get('/vehicles', {
+        params: activeCompanyId ? { empresaId: activeCompanyId } : {},
+      });
       if (res.data.success) {
         setVehicles(res.data.data);
         setDrivers(res.data.data.filter((v: any) => v.chofer_id));
@@ -54,10 +81,11 @@ export const DriversPage: React.FC = () => {
         numeroLicencia: licencia,
         categoriaLicencia: 'A-IIIa',
         vehiculoId,
+        ...(user?.rol === 'SUPER_ADMIN' ? { empresaId: selectedCompanyId } : {}),
       });
       alert('Chofer registrado con éxito.');
       setIsOpenModal(false);
-      setVehiculoId('');
+      resetCreateDriverForm();
       fetchDrivers();
     } catch (error: any) {
       setFormError(error.response?.data?.message || 'No se pudo registrar el chofer. Inténtalo nuevamente.');
@@ -79,10 +107,9 @@ export const DriversPage: React.FC = () => {
         </div>
         <button
           onClick={() => {
-            setFormError('');
-            setVehiculoId('');
+            resetCreateDriverForm();
             setIsOpenModal(true);
-            fetchDrivers();
+            void fetchDrivers();
           }}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs shadow-lg shadow-emerald-500/20 transition-all self-start"
         >
@@ -170,9 +197,31 @@ export const DriversPage: React.FC = () => {
       {/* Modal Registrar Chofer */}
       {isOpenModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 text-slate-100 shadow-2xl">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6 space-y-4 text-slate-100 shadow-2xl">
             <h3 className="text-base font-bold text-white">Registrar Nuevo Chofer</h3>
             <form onSubmit={handleCreateDriver} className="space-y-3 text-xs">
+              {user?.rol === 'SUPER_ADMIN' && (
+                <div>
+                  <label className="font-semibold text-slate-300">Empresa</label>
+                  <select
+                    value={selectedCompanyId}
+                    onChange={(e) => {
+                      setSelectedCompanyId(e.target.value);
+                      setVehiculoId('');
+                      void fetchDrivers(e.target.value);
+                    }}
+                    required
+                    className="w-full mt-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white"
+                  >
+                    <option value="">Selecciona una empresa</option>
+                    {companies.map((company) => (
+                      <option key={company.id} value={company.id}>
+                        {company.nombre_comercial}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="font-semibold text-slate-300">Nombres</label>
@@ -236,6 +285,27 @@ export const DriversPage: React.FC = () => {
               </div>
 
               <div>
+                <label htmlFor="driver-initial-password" className="flex items-center gap-1 font-semibold text-slate-300">
+                  <KeyRound className="h-3.5 w-3.5" />
+                  Contraseña inicial
+                </label>
+                <input
+                  id="driver-initial-password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  minLength={8}
+                  autoComplete="new-password"
+                  placeholder="Mínimo 8 caracteres"
+                  className="w-full mt-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white"
+                />
+                <p className="mt-1 text-[11px] text-slate-400">
+                  El chofer usará esta contraseña para ingresar y podrá cambiarla desde su cuenta.
+                </p>
+              </div>
+
+              <div>
                 <label htmlFor="driver-vehicle" className="font-semibold text-slate-300">
                   Placa / Flota asignada *
                 </label>
@@ -276,7 +346,7 @@ export const DriversPage: React.FC = () => {
                   type="button"
                   onClick={() => {
                     setIsOpenModal(false);
-                    setFormError('');
+                    resetCreateDriverForm();
                   }}
                   className="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold"
                 >

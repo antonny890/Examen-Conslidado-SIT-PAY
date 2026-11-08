@@ -11,7 +11,7 @@ dependencies:
     sdk: flutter
   # Gestión de estado y arquitectura limpia
   provider: ^6.1.2
-  # Cliente HTTP con interceptores JWT
+  # Cliente HTTP con renovación de Firebase ID tokens
   dio: ^5.7.0
   # Almacenamiento seguro de tokens y credenciales
   flutter_secure_storage: ^9.2.2
@@ -34,6 +34,7 @@ dependencies:
   shared_preferences: ^2.5.6
   camera: ^0.12.2
   google_mlkit_face_detection: ^1.0.1
+  google_sign_in: ^7.2.0
 
 dev_dependencies:
   flutter_test:

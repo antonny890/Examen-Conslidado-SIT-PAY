@@ -11,20 +11,20 @@
 
 En el transporte público urbano de Arequipa (Sistema Integrado de Transporte - SIT), el manejo manual de dinero en efectivo genera fricción, inseguridad al conducir, cobros informales sin comprobante y un recurrente incumplimiento de las tarifas preferenciales establecidas por ley.
 
-**SIT-Pay Arequipa** busca facilitar el pago del pasaje mediante una app móvil Flutter, un panel web React y una API central. SIT-Pay **no es una billetera digital, no mantiene saldos ni custodia fondos**: en una operación real, el dinero debe ser procesado y liquidado directamente por una entidad financiera externa. El proveedor bancario todavía no está definido ni integrado, por lo que actualmente no se puede cobrar.
+**SIT-Pay Arequipa** busca facilitar el pago del pasaje mediante una app móvil Flutter, un panel web React y una API central. SIT-Pay **no es una billetera digital, no mantiene saldos ni custodia fondos**: en una operación real, el dinero debe ser procesado y liquidado directamente por una entidad financiera externa. El proveedor bancario todavía no está definido ni integrado. El prototipo permite probar el recorrido con tarjetas ficticias; esos pagos se marcan como simulados y no generan cargos.
 
 ### Cumplimiento del Marco Legal Peruano:
 1. **Ley N° 26271 (Pasaje Diferenciado Universitario y Escolar)**:
    - El valor del pasaje universitario y escolar equivale al 50 % de la tarifa regular de adulto (configurable: S/ 0.50 vs S/ 1.00).
    - Aplica reglamentariamente de **05:00 a 24:00 horas en días laborables**.
    - Requiere acreditación previa (vía correo institucional `.edu.pe` o foto del carné universitario/escolar).
-   - Fuera del horario legal o sin aprobación vigente, el motor calcula la tarifa regular; el cobro sigue deshabilitado hasta integrar al banco.
+   - Fuera del horario legal o sin aprobación vigente, el motor calcula la tarifa regular. El prototipo solo simula el pago.
 2. **Ley N° 29733 (Protección de Datos Personales)**:
    - Registro de consentimiento expreso e informado en el registro de usuarios.
-   - La interfaz del chofer debe recibir únicamente la confirmación de un pago validado por el proveedor externo; nunca una confirmación simulada del cliente.
+   - Las notificaciones del prototipo se identifican explícitamente como simulaciones; no equivalen a una confirmación bancaria.
    - Registro inmutable de auditoría para todas las operaciones sensibles.
 3. **Ley N° 29571 (Código de Protección y Defensa del Consumidor)**:
-   - La emisión del comprobante y la confirmación al chofer deben ocurrir solo después de verificar el pago con el proveedor externo.
+   - Las boletas del prototipo indican que el pago es simulado. En producción, solo se deben emitir comprobantes después de verificar el pago con el proveedor externo.
    - Historial de transacciones descargable y módulo formal de Libro de Reclamaciones e Incidencias.
 4. **Pagos externos (integración pendiente)**:
    - La entidad financiera seleccionada procesará y liquidará los fondos. SIT-Pay no recibe recargas, no ofrece saldo y no confirma pagos por cuenta propia.
@@ -36,7 +36,7 @@ En el transporte público urbano de Arequipa (Sistema Integrado de Transporte - 
 
 ```text
 sit-pay-arequipa/
-├── backend/                  # API REST + Swagger + Knex Migrations + Socket.IO (Node.js + PostgreSQL)
+├── backend/                  # API REST + Swagger + Socket.IO (Node.js + Firebase Admin)
 ├── mobile/                   # App Flutter (Dart) para celulares (Pasajeros y Choferes con enrutamiento automático)
 ├── web/                      # Panel Web React + Vite + Tailwind CSS (Escritorio/Tablet para Empresas y Autoridad)
 ├── src/                      # Prototipo visual de la raíz; no procesa pagos reales
@@ -47,24 +47,9 @@ sit-pay-arequipa/
 
 ---
 
-## 3. Cuentas de Acceso y Credenciales de Prueba
+## 3. Cuentas de Acceso
 
-Todas las cuentas de prueba sembradas en la base de datos comparten la misma contraseña:
-
-```text
-Contraseña unificada: SitPay2026!
-```
-
-| Rol | Correo Electrónico | Nombre Completo | DNI | Placa Asignada / Condición |
-| :--- | :--- | :--- | :--- | :--- |
-| **SUPER_ADMIN** | `superadmin@sitpay.gob.pe` | Hernán Peralta Mendoza | 29481920 | Fiscalización y configuración de tarifas (MPA) |
-| **ADMIN_EMPRESA** | `admin.transcayma@sitpay.gob.pe` | Gabriela Torres Valdivia | 41298451 | Empresa Transcayma Operadora S.A. |
-| **CHOFER** | `chofer.carlos@sitpay.gob.pe` | Carlos Vilca Mamani | 40192837 | **Placa V7A-890** (Transcayma / Cuenca C3 Cayma) |
-| **CHOFER** | `chofer.manuel@sitpay.gob.pe` | Manuel Quispe Chambi | 42891045 | **Placa V8B-123** (AQP Masivo / Cuenca C2 Cono Norte) |
-| **CHOFER** | `chofer.juan@sitpay.gob.pe` | Juan Condori Apaza | 45129834 | **Placa V9C-456** (Unión AQP / Cuenca C6 Paucarpata) |
-| **PASAJERO** | `pasajero.pedro@gmail.com` | Pedro Arenas Begazo | 72918234 | Tarifa regular adulto (tarifa de referencia: S/ 1.00) |
-| **PASAJERO** | `lucia.continental@continental.edu.pe` | Lucía Flores Zeballos | 74129856 | **Universitaria APROBADA (tarifa de referencia: S/ 0.50)** |
-| **PASAJERO** | `rodrigo.escolar@gmail.com` | Rodrigo Pinto Cáceres | 76541298 | **Escolar PENDIENTE (tarifa de referencia: S/ 1.00)** |
+El backend ya no crea cuentas demo con contraseñas conocidas. El primer `SUPER_ADMIN` se establece con variables locales `INITIAL_SUPER_ADMIN_*` y se crea con `npm run seed:firebase`. Los modos de demostración locales de los frontends no crean cuentas en Firebase.
 
 ---
 
@@ -72,7 +57,7 @@ Contraseña unificada: SitPay2026!
 
 ### Requisitos del Sistema:
 - **Node.js**: v18.0 o superior y **npm** v9 o superior.
-- **PostgreSQL**: v14 o superior con base de datos creada llamada `sit_pay_arequipa`.
+- **Proyecto Firebase** con Authentication (Email/Password), Cloud Firestore y Cloud Storage habilitados.
 - **Flutter SDK**: v3.16 o superior con Dart SDK.
 
 ---
@@ -91,19 +76,10 @@ Contraseña unificada: SitPay2026!
    PORT=5000
    NODE_ENV=development
 
-   # PostgreSQL
-   DB_HOST=127.0.0.1
-   DB_PORT=5432
-   DB_NAME=sit_pay_arequipa
-   DB_USER=postgres
-   DB_PASSWORD=postgres
-   DB_SSL=false
-
-   # Seguridad JWT
-   JWT_SECRET=replace-with-a-random-secret
-   JWT_EXPIRES_IN=2h
-   JWT_REFRESH_SECRET=replace-with-another-random-secret
-   JWT_REFRESH_EXPIRES_IN=7d
+   # Firebase: conserva la clave privada solo en backend/credentials/ (ignorada por Git)
+   FIREBASE_SERVICE_ACCOUNT_PATH=
+   FIREBASE_WEB_API_KEY=clave-web-del-proyecto
+   FIREBASE_STORAGE_BUCKET=nombre-del-bucket-de-storage
    GOOGLE_CLIENT_ID=tu-id-de-cliente-oauth-web
 
    # CORS
@@ -112,7 +88,12 @@ Contraseña unificada: SitPay2026!
    # Dominios universitarios autorizados (Ley 26271)
    ALLOWED_EDU_DOMAINS=continental.edu.pe,unsa.edu.pe,ucsm.edu.pe,utp.edu.pe
 
-   # Correo institucional (SMTP): obligatorio en producción para enviar códigos OTP.
+   # Resend: proveedor principal para códigos de registro, recuperación y medio pasaje.
+   RESEND_API_KEY=tu_clave_de_resend
+   RESEND_FROM=SIT-Pay <onboarding@resend.dev>
+   RESEND_TEST_TO=tu_correo_autorizado_en_resend
+
+   # SMTP opcional como alternativa si Resend no está configurado.
    SMTP_HOST=smtp.example.edu.pe
    SMTP_PORT=587
    SMTP_USER=cuenta-de-correo
@@ -121,24 +102,30 @@ Contraseña unificada: SitPay2026!
 
    # Token Migo para consulta de DNI: obtener uno nuevo y mantenerlo solo en el .env local/servidor.
    MIGO_API_TOKEN=tu_token_nuevo
+
+   # Cuenta inicial de administración, usada solo por seed:firebase
+   INITIAL_SUPER_ADMIN_EMAIL=admin@example.com
+   INITIAL_SUPER_ADMIN_PASSWORD=una-contraseña-segura
+   INITIAL_SUPER_ADMIN_NAMES=Nombre
+   INITIAL_SUPER_ADMIN_SURNAMES=Apellido
    ```
 
-   En desarrollo, si SMTP no está configurado, el código OTP universitario se muestra solo para pruebas. La recuperación/cambio de contraseña requiere SMTP configurado y no expone códigos en la respuesta. En producción, la solicitud falla explícitamente si falta SMTP o si el envío no se completa. La confirmación del OTP activa automáticamente la tarifa universitaria; no requiere aprobación de la empresa.
+   Resend se usa cuando `RESEND_API_KEY` y `RESEND_FROM` están configurados; si no, se usa SMTP cuando está configurado. Para probar el envío, establece `RESEND_TEST_TO` con un destinatario permitido por Resend y ejecuta `npm run test:resend` desde `backend/`. Con el dominio de prueba `onboarding@resend.dev`, Resend puede limitar los destinatarios permitidos. No guardes claves reales en `.env.example` ni en Git.
+
+   La recuperación/cambio de contraseña y la verificación de correo requieren un proveedor de correo configurado y no exponen códigos en la respuesta. En producción, las solicitudes fallan explícitamente si el envío no se completa. En desarrollo, si no hay proveedor configurado, el OTP universitario se muestra solo para pruebas. La confirmación de ese OTP activa automáticamente la tarifa universitaria; no requiere aprobación de la empresa.
 
    Para habilitar el inicio administrativo con Google, configura un cliente OAuth 2.0 de tipo aplicación web en Google Cloud Console. Copia el mismo Client ID en `backend/.env` como `GOOGLE_CLIENT_ID` y en `web/.env` como `VITE_GOOGLE_CLIENT_ID`; agrega los orígenes autorizados de la web. El botón permite entrar solo con correos ya registrados como `ADMIN_EMPRESA` o `SUPER_ADMIN`; no crea cuentas automáticamente.
 
-   La consulta de DNI móvil usa `/api/v1/auth/lookup-dni` a través de este backend y no consulta PostgreSQL. Requiere que el servidor API esté iniciado y que `MIGO_API_TOKEN` esté configurado. No incluyas el token en Flutter, en Git ni en capturas.
+   La API valida Firebase ID tokens; el refresh token se intercambia en el backend. `FIREBASE_WEB_API_KEY` es la clave pública de configuración web necesaria para intercambiar credenciales con Firebase Authentication. No incluyas la clave privada de Admin ni `MIGO_API_TOKEN` en los frontends o en Git.
 
-3. **Ejecutar las migraciones y sembrar datos de prueba (Knex.js)**:
+3. **Inicializar Firestore y la cuenta de primer acceso**:
    ```bash
-   npm run migrate
-   npx knex seed:run
+   npm run seed:firebase
    ```
-   La migración retira tablas de billetera/recargas y columnas de saldo, y marca como `ANULADA` las transacciones `EXITOSA` del esquema anterior porque no tienen confirmación bancaria verificable. Si hay datos que deban conservarse, respalde y revise la base antes de aplicarla.
-   Las migraciones normalizan las categorías de tarifa a `NORMAL` y `UNIVERSITARIA`; la tarifa universitaria mantiene su acreditación por OTP institucional.
+   El seed no borra documentos: crea las unidades de negocio y tarifas base si faltan, además del `SUPER_ADMIN` indicado por el entorno. Las migraciones Knex existentes son solo historial; no se ejecutan en el backend actual.
 
-   **Pagos:** mientras no se configure e integre una API bancaria, las rutas de cobro responden `503 PAYMENT_PROVIDER_NOT_CONFIGURED`; no crean transacciones ni comprobantes de pago.
-   **Seed:** `npx knex seed:run` borra y vuelve a crear los datos del sistema; ejecútelo solo en una base desechable de desarrollo o pruebas. No genera transacciones de pago ficticias.
+   **Pagos de prototipo:** la app acepta únicamente tarjetas ficticias de 16 dígitos que comiencen con `9999`. Se guarda en Firestore solo el titular, los últimos cuatro dígitos y el vencimiento; el número completo y el CVV no se almacenan. Las transacciones y avisos al chofer quedan marcados como simulados. No ingreses tarjetas reales ni uses este flujo para cobrar dinero.
+   **Seed:** no ejecutes seeds Knex antiguos; pertenecen al esquema PostgreSQL histórico y no al backend Firebase actual.
 
 4. **Iniciar el servidor backend**:
    ```bash
@@ -161,14 +148,13 @@ Contraseña unificada: SitPay2026!
    flutter pub get
    ```
 
-3. **Configuración de IP de Red**:
-   En `lib/core/constants/api_constants.dart`:
-   - Para **Emulador Android**: se usa `http://10.0.2.2:5000/api/v1`.
-   - Para **Dispositivo Físico o Emulador iOS**: colocar la IP local de su computadora (ej. `http://192.168.1.50:5000/api/v1`).
+3. **Configurar el backend para el dispositivo**:
+   - El valor predeterminado `http://10.0.2.2:5000/api/v1` sirve para un emulador Android.
+   - Para un teléfono físico o iOS, pasa la IP accesible de la computadora que ejecuta el backend.
 
 4. **Ejecutar la app móvil**:
    ```bash
-   flutter run
+   flutter run --dart-define=SITPAY_API_URL=http://192.168.1.50:5000/api/v1 --dart-define=SITPAY_SOCKET_URL=http://192.168.1.50:5000
    ```
 
 ---
@@ -216,10 +202,10 @@ Esta guía cubre funciones disponibles y deja explícito el límite del flujo de
 
 ---
 
-### Paso 3: Estado actual del pago (proveedor pendiente)
-1. Consultar la tarifa estimada en la app del pasajero.
-2. La app muestra que el pago no está disponible. Si se prueba directamente el endpoint de cobro, el backend responde `503 PAYMENT_PROVIDER_NOT_CONFIGURED`.
-3. **Resultado esperado:** no se debita ni almacena dinero, no se crea una transacción exitosa, no se emite un comprobante y el chofer no recibe una confirmación de pago.
+### Paso 3: Métodos de pago simulados
+1. En el perfil del pasajero, abre **Métodos de pago** y agrega una tarjeta ficticia, por ejemplo `9999999999999999`, con un vencimiento futuro y CVV de prueba.
+2. La aplicación conserva solo los datos enmascarados; no ingreses datos de tarjetas reales.
+3. **Resultado esperado:** los métodos de pago se guardan por usuario en Firestore para las cuentas conectadas al backend. El modo demo local los guarda solo en el dispositivo.
 
 ---
 
@@ -233,8 +219,9 @@ Esta guía cubre funciones disponibles y deja explícito el límite del flujo de
    - Placa: `V7A-890`
    - Empresa: `Transcayma Operadora S.A.`
    - Tarifa calculada: **Medio Pasaje Acreditado S/ 0.50** (Ley 26271).
-5. La vista previa muestra los datos del vehículo y la tarifa de referencia; esto **no inicia ni confirma un cobro**.
-6. El botón de pago permanece deshabilitado hasta que se implemente la integración bancaria.
+5. Si no tiene tarjeta, SIT-Pay le ofrece agregar una y regresa al flujo de pago.
+6. Elige una de sus tarjetas, confirma el importe y recibe una boleta marcada como **simulada**. El chofer puede ver un aviso igualmente marcado como simulación.
+7. **No se realiza ningún cargo real.** La integración bancaria sigue pendiente.
 
 ---
 

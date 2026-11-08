@@ -4,11 +4,11 @@
 const express = require('express');
 const router = express.Router();
 const preferentialController = require('./preferential.controller');
-const authenticateJWT = require('../../middlewares/auth');
+const authenticateFirebaseToken = require('../../middlewares/auth');
 const authorizeRoles = require('../../middlewares/rbac');
 const { preferentialOtpLimiter } = require('../../middlewares/rateLimiter');
 
-router.use(authenticateJWT, authorizeRoles('PASAJERO'));
+router.use(authenticateFirebaseToken, authorizeRoles('PASAJERO'));
 
 // Rutas de pasajeros
 router.get('/status', preferentialController.getPassengerStatus);

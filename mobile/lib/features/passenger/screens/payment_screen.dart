@@ -1,3 +1,6 @@
+import 'dart:math';
+
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -6,9 +9,10 @@ import '../../../core/utils/sit_plate_input_formatter.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../providers/payment_provider.dart';
 import 'ticket_detail_screen.dart';
+import 'payment_methods_screen.dart';
 
 /// Pantalla de Pago de Pasaje (QR y Placa Manual)
-/// Muestra la tarifa estimada; el pago y la boleta requieren una confirmación bancaria.
+/// Muestra la tarifa estimada y permite probar el flujo con tarjetas ficticias.
 class PaymentScreen extends StatefulWidget {
   const PaymentScreen({super.key});
 
@@ -21,6 +25,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   final _plateController = TextEditingController();
   final MobileScannerController _scannerController = MobileScannerController();
   bool _hasScanned = false;
+  bool _isSubmittingPayment = false;
 
   @override
   void dispose() {
@@ -264,43 +269,33 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     backgroundColor: const Color(0xFF10B981),
                     minimumSize: const Size.fromHeight(56),
                   ),
-                  onPressed: () async {
-                    Navigator.pop(ctx);
-                    final success = isQR
-                        ? await payment.payWithQR(identifier)
-                        : await payment.payWithPlate(identifier);
-
-                    if (!mounted) return;
-
-                    if (success && payment.lastTicket != null) {
-                      Navigator.of(context).pushReplacement(
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              TicketDetailScreen(ticket: payment.lastTicket!),
-                        ),
-                      );
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                            content: Text(payment.errorMessage ??
-                                'Error al procesar el pago.')),
-                      );
-                      setState(() => _hasScanned = false);
-                    }
-                  },
-                  child: const Text('Confirmar y Pagar Pasaje'),
+                  onPressed: _isSubmittingPayment
+                      ? null
+                      : () => _continueWithPayment(
+                            sheetContext: ctx,
+                            isQR: isQR,
+                            identifier: identifier,
+                            amount: monto,
+                          ),
+                  child: _isSubmittingPayment
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Continuar con pago simulado'),
                 ),
               ] else ...[
                 const Column(
                   children: [
                     Text(
-                      'El pago directo todavía no está disponible.',
+                      'La simulación de pago no está disponible.',
                       style: TextStyle(
                           color: Colors.amber, fontWeight: FontWeight.bold),
                     ),
                     SizedBox(height: 8),
                     Text(
-                      'Falta integrar la API bancaria. No se realizará ningún cobro ni se guardará saldo en SIT-Pay.',
+                      'No se realizará ningún cobro real.',
                       textAlign: TextAlign.center,
                       style: TextStyle(fontSize: 12, color: Colors.grey),
                     ),
@@ -452,5 +447,155 @@ class _PaymentScreenState extends State<PaymentScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _continueWithPayment({
+    required BuildContext sheetContext,
+    required bool isQR,
+    required String identifier,
+    required double amount,
+  }) async {
+    if (_isSubmittingPayment) return;
+    setState(() => _isSubmittingPayment = true);
+    final payment = Provider.of<PaymentProvider>(context, listen: false);
+    final isDemoMode =
+        Provider.of<AuthProvider>(context, listen: false).isDemoMode;
+    List<Map<String, dynamic>> methods;
+    try {
+      methods = await payment.loadPaymentMethods(demoMode: isDemoMode);
+    } on DioException catch (error) {
+      if (!mounted) return;
+      final data = error.response?.data;
+      final message = data is Map && data['message'] is String
+          ? data['message'] as String
+          : 'No se pudieron cargar las tarjetas de prueba.';
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
+      setState(() => _isSubmittingPayment = false);
+      return;
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudieron cargar las tarjetas de prueba.'),
+        ),
+      );
+      setState(() => _isSubmittingPayment = false);
+      return;
+    }
+
+    if (!mounted) return;
+    if (methods.isEmpty) {
+      setState(() => _isSubmittingPayment = false);
+      if (!sheetContext.mounted) return;
+      Navigator.pop(sheetContext);
+      final added = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          builder: (_) => const PaymentMethodsScreen(returnAfterAdd: true),
+        ),
+      );
+      if (added == true && mounted) {
+        _showConfirmationBottomSheet(isQR: isQR, identifier: identifier);
+      }
+      return;
+    }
+
+    String? selectedMethodId = methods.first['id']?.toString();
+    final methodId = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (selectionContext) => StatefulBuilder(
+        builder: (context, setSelectionState) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Elige una tarjeta de prueba',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Simulación únicamente. No se realizará un cargo real.',
+                ),
+                const SizedBox(height: 12),
+                RadioGroup<String>(
+                  groupValue: selectedMethodId,
+                  onChanged: (value) =>
+                      setSelectionState(() => selectedMethodId = value),
+                  child: Column(
+                    children: methods.map((method) {
+                      final id = method['id'].toString();
+                      return RadioListTile<String>(
+                        value: id,
+                        title:
+                            Text('Tarjeta •••• ${method['ultimos_digitos']}'),
+                        subtitle: Text(
+                          '${method['titular']} · ${method['mes_vencimiento']}/${method['anio_vencimiento']}',
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                FilledButton(
+                  onPressed: selectedMethodId == null
+                      ? null
+                      : () => Navigator.pop(selectionContext, selectedMethodId),
+                  child:
+                      Text('Pagar S/ ${amount.toStringAsFixed(2)} (simulado)'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (methodId == null || !mounted) {
+      if (mounted) setState(() => _isSubmittingPayment = false);
+      return;
+    }
+    if (!sheetContext.mounted) {
+      setState(() => _isSubmittingPayment = false);
+      return;
+    }
+    Navigator.pop(sheetContext);
+    final randomPart = Random.secure().nextInt(1 << 32).toRadixString(16);
+    final idempotencyKey =
+        '${DateTime.now().microsecondsSinceEpoch}-$randomPart';
+    final success = isQR
+        ? await payment.payWithQR(
+            identifier,
+            paymentMethodId: methodId,
+            idempotencyKey: idempotencyKey,
+            demoMode: isDemoMode,
+          )
+        : await payment.payWithPlate(
+            identifier,
+            paymentMethodId: methodId,
+            idempotencyKey: idempotencyKey,
+            demoMode: isDemoMode,
+          );
+    if (!mounted) return;
+    setState(() {
+      _isSubmittingPayment = false;
+      _hasScanned = false;
+    });
+    if (success && payment.lastTicket != null) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => TicketDetailScreen(ticket: payment.lastTicket!),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              payment.errorMessage ?? 'No se pudo completar la simulación.'),
+        ),
+      );
+    }
   }
 }

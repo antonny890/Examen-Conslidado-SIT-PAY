@@ -17,6 +17,7 @@ import '../../auth/providers/auth_provider.dart';
 import '../../auth/screens/forgot_password_screen.dart';
 import '../../auth/screens/login_screen.dart';
 import '../../passenger/screens/claims_screen.dart';
+import '../../passenger/screens/payment_methods_screen.dart';
 
 const _profileBlue = Color(0xFF0F3B60);
 const _profileAccent = Color(0xFF10B981);
@@ -103,6 +104,19 @@ class ProfileScreen extends StatelessWidget {
                     : 'Datos personales, alias y foto',
                 onTap: () => _push(context, const _ManageProfileScreen()),
               ),
+              _ProfileMenuTile(
+                icon: Icons.link_rounded,
+                title: 'Conexiones',
+                subtitle: 'Cuentas vinculadas',
+                onTap: () => _push(context, const _ConnectionsScreen()),
+              ),
+              if (user?.rol == 'PASAJERO')
+                _ProfileMenuTile(
+                  icon: Icons.credit_card_outlined,
+                  title: 'Métodos de pago',
+                  subtitle: 'Administra tus tarjetas de prueba',
+                  onTap: () => _push(context, const PaymentMethodsScreen()),
+                ),
               _ProfileMenuTile(
                 icon: Icons.shield_outlined,
                 title: 'Seguridad y privacidad',
@@ -536,6 +550,54 @@ class _ProfileSubpage extends StatelessWidget {
   }
 }
 
+class _ConnectionsScreen extends StatelessWidget {
+  const _ConnectionsScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final googleConnected =
+        context.watch<AuthProvider>().currentUser?.googleConnected ?? false;
+
+    return _ProfileSubpage(
+      title: 'Conexiones',
+      icon: Icons.link_rounded,
+      child: _ProfileDataCard(
+        title: 'Cuenta de Google',
+        rows: [
+          _DataRow(
+            label: 'Estado',
+            value: googleConnected ? 'Conectada' : 'No conectada',
+          ),
+        ],
+        footer: Text(
+          googleConnected
+              ? 'Esta cuenta de SIT-PAY está asociada con Google. '
+                  'La opción para desvincularla estará disponible próximamente.'
+              : 'La vinculación de Google a una cuenta existente estará '
+                  'disponible próximamente.',
+          style: theme.textTheme.bodySmall?.copyWith(height: 1.4),
+        ),
+        action: OutlinedButton.icon(
+          onPressed: null,
+          icon: Icon(
+            googleConnected ? Icons.link_off_rounded : Icons.link_rounded,
+          ),
+          label: Text(
+            googleConnected
+                ? 'Desvincular cuenta (próximamente)'
+                : 'Vincular cuenta (próximamente)',
+          ),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: isDark ? Colors.white70 : _profileBlue,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ManageProfileScreen extends StatefulWidget {
   const _ManageProfileScreen();
 
@@ -583,10 +645,11 @@ class _ManageProfileScreenState extends State<_ManageProfileScreen> {
         userId: user.id,
         image: image,
       );
+      await auth.uploadProfilePhoto(path);
       await auth.updateLocalProfile(profileImagePath: path);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Foto actualizada en este dispositivo.')),
+        const SnackBar(content: Text('Foto actualizada en tu perfil.')),
       );
     } catch (error) {
       if (!mounted) return;

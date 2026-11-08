@@ -8,6 +8,7 @@ class TicketDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isSimulated = ticket['pago_simulado'] == true;
     final codigoBoleta = ticket['codigoBoleta'] ??
         ticket['codigo_boleta'] ??
         'BOL-20261030-000000';
@@ -50,16 +51,23 @@ class TicketDetailScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
-              const Center(
+              Center(
                 child: Text(
-                  '¡Pago Realizado con Éxito!',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  isSimulated
+                      ? '¡Pago simulado con éxito!'
+                      : '¡Pago realizado con éxito!',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
-              const Center(
+              Center(
                 child: Text(
-                  'El chofer ha sido notificado en su pantalla.',
-                  style: TextStyle(fontSize: 13, color: Colors.grey),
+                  isSimulated
+                      ? 'Prototipo: no se realizó ningún cargo real.'
+                      : 'El chofer ha sido notificado en su pantalla.',
+                  style: const TextStyle(fontSize: 13, color: Colors.grey),
                 ),
               ),
               const SizedBox(height: 24),
@@ -132,9 +140,9 @@ class TicketDetailScreen extends StatelessWidget {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
-                          'TOTAL PAGADO:',
-                          style: TextStyle(
+                        Text(
+                          isSimulated ? 'IMPORTE SIMULADO:' : 'TOTAL PAGADO:',
+                          style: const TextStyle(
                               fontWeight: FontWeight.bold, fontSize: 15),
                         ),
                         Text(

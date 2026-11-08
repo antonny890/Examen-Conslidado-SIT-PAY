@@ -12,17 +12,28 @@ class DniIdentity {
 class MigoService {
   static final ApiClient _apiClient = ApiClient();
 
-  static Future<DniIdentity> consultarDni(String dni) async {
+  static Future<DniIdentity> consultarDni(
+    String dni, {
+    required bool consentimientoConsultaDni,
+  }) async {
     final normalizedDni = dni.trim();
     if (!RegExp(r'^\d{8}$').hasMatch(normalizedDni)) {
       throw const FormatException('El DNI debe tener exactamente 8 dígitos.');
+    }
+    if (!consentimientoConsultaDni) {
+      throw const FormatException(
+        'Debes autorizar la consulta de identidad antes de consultar el DNI.',
+      );
     }
 
     late final Response<dynamic> response;
     try {
       response = await _apiClient.dio.post(
         ApiConstants.lookupDni,
-        data: {'dni': normalizedDni},
+        data: {
+          'dni': normalizedDni,
+          'consentimientoConsultaDni': consentimientoConsultaDni,
+        },
       );
     } on DioException catch (error) {
       final body = error.response?.data;

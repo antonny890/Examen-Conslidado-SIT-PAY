@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../../core/utils/alias_rules.dart';
+import '../models/google_sign_in_result.dart';
 import '../providers/auth_provider.dart';
 import 'face_verification_screen.dart';
 import '../../../services/migo_service.dart';
@@ -9,7 +10,9 @@ import '../../../services/migo_service.dart';
 /// Pantalla de Registro de Pasajeros
 /// Cumplimiento Ley 29733: Consentimiento expreso e informado de tratamiento de datos personales
 class RegisterScreen extends StatefulWidget {
-  const RegisterScreen({super.key});
+  const RegisterScreen({super.key, this.googleSignInResult});
+
+  final GoogleSignInResult? googleSignInResult;
 
   @override
   State<RegisterScreen> createState() => _RegisterScreenState();
@@ -31,6 +34,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _isLookingUpDni = false;
   String? _lastLookedUpDni;
   int _dniLookupSequence = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _emailController.text = widget.googleSignInResult?.email ?? '';
+  }
 
   @override
   void dispose() {
@@ -69,6 +78,30 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
+    final googleAccount = widget.googleSignInResult;
+    if (googleAccount != null) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => FaceVerificationScreen(
+            email: googleAccount.email,
+            googleRegistration: GooglePassengerRegistration(
+              googleAccount: googleAccount,
+              numeroDocumento: _dniController.text.trim(),
+              nombres: _nombresController.text.trim(),
+              apellidos: _apellidosController.text.trim(),
+              telefono: _telefonoController.text.trim().isEmpty
+                  ? null
+                  : _telefonoController.text.trim(),
+              alias: _aliasController.text.trim(),
+              consentimientoDatos: _consentimientoDatos,
+              consentimientoConsultaDni: _consentimientoConsultaDni,
+            ),
+          ),
+        ),
+      );
+      return;
+    }
+
     final auth = Provider.of<AuthProvider>(context, listen: false);
     final success = await auth.registerPassenger(
       email: _emailController.text,
@@ -79,6 +112,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       numeroDocumento: _dniController.text,
       telefono: _telefonoController.text,
       consentimientoDatos: _consentimientoDatos,
+      consentimientoConsultaDni: _consentimientoConsultaDni,
     );
 
     if (!mounted) return;
@@ -122,7 +156,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() => _isLookingUpDni = true);
 
     try {
-      final identity = await MigoService.consultarDni(dni);
+      final identity = await MigoService.consultarDni(
+        dni,
+        consentimientoConsultaDni: true,
+      );
       if (!mounted || sequence != _dniLookupSequence) return;
 
       _nombresController.text = identity.nombres;
@@ -178,13 +215,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
-                  'Crea tu cuenta de Pasajero',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                Text(
+                  widget.googleSignInResult == null
+                      ? 'Crea tu cuenta de Pasajero'
+                      : 'Completa tu cuenta de Pasajero',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Paga tu pasaje urbano con QR sin llevar efectivo.',
+                  widget.googleSignInResult == null
+                      ? 'Paga tu pasaje urbano con QR sin llevar efectivo.'
+                      : 'Correo de Google confirmado. Completa tus datos para continuar.',
                   style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
                 ),
                 const SizedBox(height: 20),
@@ -301,6 +345,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   decoration: const InputDecoration(
                       labelText: 'Celular (Opcional)',
                       prefixIcon: Icon(Icons.phone_outlined)),
+                  validator: (value) {
+                    final phone = value?.trim() ?? '';
+                    return phone.isNotEmpty &&
+                            !RegExp(r'^\+?[0-9\s()-]{6,20}$').hasMatch(phone)
+                        ? 'Ingresa un número de celular válido.'
+                        : null;
+                  },
                 ),
                 const SizedBox(height: 14),
 
@@ -308,33 +359,37 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
+                  readOnly: widget.googleSignInResult != null,
                   decoration: const InputDecoration(
-                      labelText: 'Correo Electrónico *',
+                      labelText: 'Correo Electrónico',
                       prefixIcon: Icon(Icons.email_outlined)),
                   validator: (v) => v == null || !v.contains('@')
                       ? 'Correo no válido.'
                       : null,
                 ),
-                const SizedBox(height: 14),
+                if (widget.googleSignInResult == null) ...[
+                  const SizedBox(height: 14),
 
-                // Contraseña
-                TextFormField(
-                  controller: _passwordController,
-                  obscureText: _obscurePassword,
-                  decoration: InputDecoration(
-                    labelText: 'Contraseña *',
-                    prefixIcon: const Icon(Icons.lock_outline),
-                    suffixIcon: IconButton(
-                      icon: Icon(_obscurePassword
-                          ? Icons.visibility_off
-                          : Icons.visibility),
-                      onPressed: () =>
-                          setState(() => _obscurePassword = !_obscurePassword),
+                  // Contraseña
+                  TextFormField(
+                    controller: _passwordController,
+                    obscureText: _obscurePassword,
+                    decoration: InputDecoration(
+                      labelText: 'Contraseña *',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      suffixIcon: IconButton(
+                        icon: Icon(_obscurePassword
+                            ? Icons.visibility_off
+                            : Icons.visibility),
+                        onPressed: () => setState(
+                            () => _obscurePassword = !_obscurePassword),
+                      ),
                     ),
+                    validator: (v) => v == null || v.length < 6
+                        ? 'Mínimo 6 caracteres.'
+                        : null,
                   ),
-                  validator: (v) =>
-                      v == null || v.length < 6 ? 'Mínimo 6 caracteres.' : null,
-                ),
+                ],
                 const SizedBox(height: 16),
 
                 // Consentimiento Ley 29733 (Datos Personales)

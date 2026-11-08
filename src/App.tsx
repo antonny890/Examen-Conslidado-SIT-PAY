@@ -512,7 +512,7 @@ export default function App() {
             <h2 className="text-lg font-semibold text-white">Estructura del Monorepo</h2>
             <div className="bg-slate-950 rounded-lg p-4 font-mono text-xs text-slate-300 overflow-x-auto border border-slate-800">
               <pre>{`sit-pay-arequipa/
-├── backend/                  # Node.js + Express + Knex + PostgreSQL + Socket.IO (Fase 2)
+├── backend/                  # Node.js + Express + Firebase Admin + Socket.IO
 ├── mobile/                   # Flutter (Dart) para Pasajeros y Choferes (Fase 3)
 └── web/                      # React + Vite + Tailwind para Administradores (Fase 4)`}</pre>
             </div>

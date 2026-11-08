@@ -4,12 +4,13 @@
 const express = require('express');
 const router = express.Router();
 const profileController = require('./profile.controller');
-const authenticateJWT = require('../../middlewares/auth');
+const authenticateFirebaseToken = require('../../middlewares/auth');
 
-router.use(authenticateJWT);
+router.use(authenticateFirebaseToken);
 
 router.get('/', profileController.getProfile);
 router.put('/', profileController.updateProfile);
+router.put('/photo', profileController.updateProfilePhoto);
 router.put('/change-password', profileController.changePassword);
 router.post('/consent', profileController.registerConsent);
 router.delete('/', profileController.deactivateAccount);

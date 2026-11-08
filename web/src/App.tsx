@@ -71,6 +71,7 @@ export default function App() {
             >
             {/* Rutas Super Admin */}
             <Route path="/superadmin/dashboard" element={<SuperAdminDashboardPage />} />
+            <Route path="/superadmin/claims" element={<ClaimsManagementPage />} />
             <Route path="/superadmin/companies" element={<CompaniesAndUnitsPage />} />
             <Route path="/superadmin/fares" element={<FaresConfigurationPage />} />
             <Route path="/superadmin/users" element={<AdministratorsPage />} />

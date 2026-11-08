@@ -10,6 +10,7 @@ class UserModel {
   final DateTime? aliasUpdatedAt;
   final String? profileImagePath;
   final DriverVehicleInfo? choferInfo;
+  final bool googleConnected;
 
   UserModel({
     required this.id,
@@ -22,6 +23,7 @@ class UserModel {
     this.aliasUpdatedAt,
     this.profileImagePath,
     this.choferInfo,
+    this.googleConnected = false,
   });
 
   String get nombreCompleto => '$nombres $apellidos'.trim();
@@ -35,6 +37,7 @@ class UserModel {
     String? alias,
     DateTime? aliasUpdatedAt,
     String? profileImagePath,
+    String? fotoUrl,
   }) {
     return UserModel(
       id: id,
@@ -42,11 +45,12 @@ class UserModel {
       rol: rol,
       nombres: nombres,
       apellidos: apellidos,
-      fotoUrl: fotoUrl,
+      fotoUrl: fotoUrl ?? this.fotoUrl,
       alias: alias ?? this.alias,
       aliasUpdatedAt: aliasUpdatedAt ?? this.aliasUpdatedAt,
       profileImagePath: profileImagePath ?? this.profileImagePath,
       choferInfo: choferInfo,
+      googleConnected: googleConnected,
     );
   }
 
@@ -63,6 +67,7 @@ class UserModel {
           ? null
           : DateTime.tryParse(json['aliasUpdatedAt']),
       profileImagePath: json['profileImagePath'],
+      googleConnected: json['googleConnected'] == true,
       choferInfo: json['choferInfo'] != null
           ? DriverVehicleInfo.fromJson(json['choferInfo'])
           : null,
@@ -80,6 +85,7 @@ class UserModel {
       'alias': alias,
       'aliasUpdatedAt': aliasUpdatedAt?.toIso8601String(),
       'profileImagePath': profileImagePath,
+      'googleConnected': googleConnected,
       'choferInfo': choferInfo?.toJson(),
     };
   }

@@ -1,11 +1,18 @@
 /// Constantes de red y endpoints de SIT-Pay Arequipa
 class ApiConstants {
   // En emulador Android usar 10.0.2.2; en dispositivo físico o emulador iOS usar IP local de la red
-  static const String defaultBaseUrl = 'http://10.0.2.2:5000/api/v1';
-  static const String socketUrl = 'http://10.0.2.2:5000';
+  static const String defaultBaseUrl = String.fromEnvironment(
+    'SITPAY_API_URL',
+    defaultValue: 'http://10.0.2.2:5000/api/v1',
+  );
+  static const String socketUrl = String.fromEnvironment(
+    'SITPAY_SOCKET_URL',
+    defaultValue: 'http://10.0.2.2:5000',
+  );
 
   // Autenticación
   static const String login = '/auth/login';
+  static const String googlePassenger = '/auth/google/passenger';
   static const String register = '/auth/register';
   static const String lookupDni = '/auth/lookup-dni';
   static const String registrationEmailRequest =
@@ -15,6 +22,7 @@ class ApiConstants {
   static const String refresh = '/auth/refresh';
   static const String logout = '/auth/logout';
   static const String forgotPassword = '/auth/forgot-password';
+  static const String resetPassword = '/auth/reset-password';
 
   // Perfil
   static const String profile = '/profile';
@@ -25,7 +33,9 @@ class ApiConstants {
   static const String payQR = '/payments/pay/qr';
   static const String payPlate = '/payments/pay/plate';
   static const String previewPayment = '/payments/preview';
+  static const String paymentMethods = '/payment-methods';
   static const String myTickets = '/tickets';
+  static const String fares = '/fares';
 
   // Pase Preferencial (Ley 26271)
   static const String preferentialStatus = '/preferential/status';

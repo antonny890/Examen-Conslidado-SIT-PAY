@@ -37,7 +37,7 @@ class ApiClient {
             if (refreshToken != null) {
               try {
                 final refreshResponse = await Dio().post(
-                  '${ApiConstants.defaultBaseUrl}${ApiConstants.refresh}',
+                  '${dio.options.baseUrl}${ApiConstants.refresh}',
                   data: {'refreshToken': refreshToken},
                 );
 
@@ -68,5 +68,24 @@ class ApiClient {
         },
       ),
     );
+  }
+
+  Future<String> refreshAccessToken() async {
+    final refreshToken = await SecureStorageService.getRefreshToken();
+    if (refreshToken == null || refreshToken.isEmpty) {
+      throw StateError('No hay un token de renovación disponible.');
+    }
+
+    final response = await Dio().post(
+      '${dio.options.baseUrl}${ApiConstants.refresh}',
+      data: {'refreshToken': refreshToken},
+    );
+    final tokens = response.data['data']['tokens'] as Map<String, dynamic>;
+    final accessToken = tokens['accessToken'] as String;
+    await SecureStorageService.saveTokens(
+      accessToken: accessToken,
+      refreshToken: tokens['refreshToken'] as String,
+    );
+    return accessToken;
   }
 }

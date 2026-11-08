@@ -4,6 +4,7 @@ import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:audioplayers/audioplayers.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../../../core/constants/api_constants.dart';
+import '../../../core/network/api_client.dart';
 import '../../../core/storage/secure_storage.dart';
 
 /// Gestor de WebSockets para el Chofer (Socket.IO)
@@ -16,6 +17,8 @@ class DriverSocketProvider extends ChangeNotifier {
   String? _currentPlate;
   String? _qrCode;
   bool _isDemoPreview = false;
+  bool _isRefreshingSocket = false;
+  bool _socketRefreshAttempted = false;
 
   // Notificación activa de pantalla verde
   Map<String, dynamic>? _activePaymentAlert;
@@ -47,11 +50,13 @@ class DriverSocketProvider extends ChangeNotifier {
 
   void clearDriverAssignment() {
     _alertTimer?.cancel();
-    _socket?.disconnect();
-    _socket?.dispose();
+    final socket = _socket;
     _socket = null;
+    socket?.disconnect();
+    socket?.dispose();
     _isDemoPreview = false;
     _isConnected = false;
+    _socketRefreshAttempted = false;
     _currentPlate = null;
     _qrCode = null;
     _turnHistory.clear();
@@ -64,7 +69,12 @@ class DriverSocketProvider extends ChangeNotifier {
     required String placa,
     required String qrCodigoSeguro,
   }) async {
+    final oldSocket = _socket;
+    _socket = null;
+    oldSocket?.disconnect();
+    oldSocket?.dispose();
     _isDemoPreview = false;
+    _socketRefreshAttempted = false;
     _turnHistory.clear();
     _turnPaymentCount = 0;
     _currentPlate = placa;
@@ -77,6 +87,10 @@ class DriverSocketProvider extends ChangeNotifier {
 
     final token = await SecureStorageService.getAccessToken();
 
+    _connectSocket(token);
+  }
+
+  void _connectSocket(String? token) {
     _socket = io.io(
       ApiConstants.socketUrl,
       io.OptionBuilder()
@@ -90,6 +104,7 @@ class DriverSocketProvider extends ChangeNotifier {
 
     _socket!.onConnect((_) {
       _isConnected = true;
+      _socketRefreshAttempted = false;
       notifyListeners();
       debugPrint('[Driver Socket] Conectado al bus $_currentPlate');
     });
@@ -97,6 +112,12 @@ class DriverSocketProvider extends ChangeNotifier {
     _socket!.onDisconnect((_) {
       _isConnected = false;
       notifyListeners();
+    });
+    _socket!.on('connect_error', (dynamic error) {
+      _isConnected = false;
+      notifyListeners();
+      debugPrint('[Driver Socket] No se pudo conectar: $error');
+      _refreshSocketSession();
     });
 
     // Escuchar evento de pago confirmado
@@ -108,9 +129,27 @@ class DriverSocketProvider extends ChangeNotifier {
     _socket!.connect();
   }
 
+  Future<void> _refreshSocketSession() async {
+    if (_isRefreshingSocket || _socketRefreshAttempted) return;
+    final previousSocket = _socket;
+    _isRefreshingSocket = true;
+    _socketRefreshAttempted = true;
+    try {
+      final token = await ApiClient().refreshAccessToken();
+      if (!identical(_socket, previousSocket)) return;
+      previousSocket?.dispose();
+      _connectSocket(token);
+    } catch (error) {
+      debugPrint('[Driver Socket] No se pudo renovar la sesión: $error');
+    } finally {
+      _isRefreshingSocket = false;
+    }
+  }
+
   void _handlePaymentReceived(dynamic data) {
     final Map<String, dynamic> payload = Map<String, dynamic>.from(data);
     final alias = payload['pasajeroAlias'];
+    final isSimulated = payload['simulado'] == true;
     final pasajeroNombre =
         alias is String && alias.trim().isNotEmpty ? alias.trim() : 'Pasajero';
     final String hora = payload['hora'] ??
@@ -118,8 +157,11 @@ class DriverSocketProvider extends ChangeNotifier {
 
     _activePaymentAlert = {
       'mensaje': alias is String && alias.trim().isNotEmpty
-          ? '$pasajeroNombre realizó el pago correspondiente'
-          : 'Se confirmó un pago',
+          ? '$pasajeroNombre ${isSimulated ? 'simuló' : 'realizó'} el pago correspondiente'
+          : isSimulated
+              ? 'Se simuló un pago de pasaje'
+              : 'Se confirmó un pago',
+      'simulado': isSimulated ? 'true' : 'false',
       'pasajero': pasajeroNombre,
       'hora': hora,
     };
@@ -128,6 +170,7 @@ class DriverSocketProvider extends ChangeNotifier {
     _turnHistory.insert(0, {
       'nombre': pasajeroNombre,
       'hora': hora,
+      'simulado': isSimulated ? 'true' : 'false',
     });
     _turnPaymentCount++;
     if (_turnHistory.length > 8) _turnHistory.removeLast();
@@ -150,8 +193,10 @@ class DriverSocketProvider extends ChangeNotifier {
   // Desconectar al salir de la pantalla
   void disposeSocket() {
     _alertTimer?.cancel();
-    _socket?.disconnect();
-    _socket?.dispose();
+    final socket = _socket;
+    _socket = null;
+    socket?.disconnect();
+    socket?.dispose();
     if (!_isDemoPreview) {
       try {
         WakelockPlus.disable();

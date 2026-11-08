@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { AlertCircle, MessageSquare, Check, X, ShieldAlert } from 'lucide-react';
+import { X } from 'lucide-react';
 import { api } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 export const ClaimsManagementPage: React.FC = () => {
+  const { isSuperAdmin } = useAuth();
   const [claims, setClaims] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [selectedClaim, setSelectedClaim] = useState<any | null>(null);
   const [responseMsg, setResponseMsg] = useState('');
   const [statusVal, setStatusVal] = useState('RESUELTO');
@@ -14,12 +17,18 @@ export const ClaimsManagementPage: React.FC = () => {
   }, []);
 
   const fetchClaims = async () => {
+    setLoading(true);
+    setLoadError('');
     try {
       const res = await api.get('/claims');
       if (res.data.success) {
         setClaims(res.data.data);
+      } else {
+        setLoadError('No se pudieron cargar los reclamos.');
       }
-    } catch (_) {} finally {
+    } catch (error: any) {
+      setLoadError(error.response?.data?.message || 'No se pudieron cargar los reclamos. Inténtalo nuevamente.');
+    } finally {
       setLoading(false);
     }
   };
@@ -36,8 +45,8 @@ export const ClaimsManagementPage: React.FC = () => {
       setSelectedClaim(null);
       setResponseMsg('');
       fetchClaims();
-    } catch (_) {
-      alert('Error al responder reclamo.');
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'Error al responder reclamo.');
     }
   };
 
@@ -45,14 +54,21 @@ export const ClaimsManagementPage: React.FC = () => {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-bold text-white tracking-tight">
-          Libro de Reclamaciones e Incidencias (Ley 29571)
+          {isSuperAdmin ? 'Incidencias dirigidas a SIT-Pay' : 'Libro de Reclamaciones e Incidencias (Ley 29571)'}
         </h1>
         <p className="text-xs text-slate-400">
-          Atiende y resuelve en plazo legal las incidencias de cobro indebido, negativa de medio pasaje o maltrato.
+          {isSuperAdmin
+            ? 'Revisa las incidencias generales reportadas por los pasajeros, incluyendo la empresa, transporte y tipo de problema seleccionado.'
+            : 'Atiende y resuelve en plazo legal las incidencias de cobro indebido, negativa de medio pasaje o maltrato.'}
         </p>
       </div>
 
       <div className="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden">
+        {loadError && (
+          <div role="alert" className="px-4 py-3 text-xs text-red-300 bg-red-500/10 border-b border-red-500/20">
+            {loadError}
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full text-xs text-left">
             <thead>
@@ -114,6 +130,22 @@ export const ClaimsManagementPage: React.FC = () => {
                   </td>
                 </tr>
               ))}
+              {!loading && !loadError && claims.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="py-8 px-4 text-center text-slate-400">
+                    {isSuperAdmin
+                      ? 'Aún no hay incidencias dirigidas a SIT-Pay.'
+                      : 'Aún no hay reclamos dirigidos a tu empresa.'}
+                  </td>
+                </tr>
+              )}
+              {loading && (
+                <tr>
+                  <td colSpan={8} className="py-8 px-4 text-center text-slate-400">
+                    Cargando reclamos...
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -131,13 +163,28 @@ export const ClaimsManagementPage: React.FC = () => {
             </div>
 
             <div className="space-y-2 text-xs bg-slate-950 p-3 rounded-xl border border-slate-800">
+              <div>
+                <span className="text-slate-400">Empresa y transporte: </span>
+                <span className="text-slate-200">
+                  {selectedClaim.empresa_nombre || 'No especificada'}
+                  {selectedClaim.vehiculo_placa ? ` · ${selectedClaim.vehiculo_placa}` : ''}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400">Tipo de incidencia: </span>
+                <span className="text-amber-300">
+                  {(selectedClaim.tipo_incidencia || 'OTRO').replace(/_/g, ' ')}
+                </span>
+              </div>
               <div className="text-slate-400">Descripción del Pasajero:</div>
               <p className="text-slate-200 italic">{selectedClaim.descripcion}</p>
             </div>
 
             <form onSubmit={handleResolve} className="space-y-3 text-xs">
               <div>
-                <label className="font-semibold text-slate-300">Resolución de la Concesionaria</label>
+                <label className="font-semibold text-slate-300">
+                  {isSuperAdmin ? 'Resolución de SIT-Pay' : 'Resolución de la Concesionaria'}
+                </label>
                 <select
                   value={statusVal}
                   onChange={(e) => setStatusVal(e.target.value)}

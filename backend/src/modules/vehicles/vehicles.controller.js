@@ -1,239 +1,271 @@
-/**
- * Controlador de Flota, Vehículos y Códigos QR Fijos
- * Cumple: Código QR seguro opaco por placa que NO expone datos personales ni tarifas.
- */
-const db = require('../../config/db');
-const { generateSecureVehicleToken, generateQRCodeSVG, generateQRCodeDataURL } = require('../../utils/qrGenerator');
+const crypto = require('node:crypto');
+const {
+  db,
+  getDocument,
+  listCollection,
+  queryCollection,
+  writeAuditLog,
+} = require('../../services/firestoreData');
+const {
+  generateSecureVehicleToken,
+  generateQRCodeSVG,
+  generateQRCodeDataURL,
+} = require('../../utils/qrGenerator');
 
-// Listar vehículos
+const companyForAdmin = async (userId) => {
+  const companies = await queryCollection('empresas', 'admin_usuario_id', '==', userId);
+  return companies.find((company) => company.activo === true) || null;
+};
+
+const canManageVehicle = async (user, vehicle) => {
+  if (user.rol === 'SUPER_ADMIN') return true;
+  const company = await companyForAdmin(user.id);
+  return Boolean(company && company.id === vehicle.empresa_id);
+};
+
+const normalizePlate = (plate) => {
+  const cleanPlate = String(plate || '').toUpperCase().trim().replace(/\s+/g, '');
+  if (!cleanPlate.includes('-') && cleanPlate.length === 6) {
+    return `${cleanPlate.slice(0, 3)}-${cleanPlate.slice(3)}`;
+  }
+  return cleanPlate;
+};
+
 const getVehicles = async (req, res, next) => {
   try {
     const { empresaId, unidadNegocioId } = req.query;
-
-    let query = db('vehiculos')
-      .join('empresas', 'vehiculos.empresa_id', 'empresas.id')
-      .join('unidades_negocio', 'vehiculos.unidad_negocio_id', 'unidades_negocio.id')
-      .leftJoin('choferes', 'vehiculos.id', 'choferes.vehiculo_id')
-      .leftJoin('usuarios as u_chofer', 'choferes.usuario_id', 'u_chofer.id')
-      .leftJoin('perfiles as p_chofer', 'u_chofer.id', 'p_chofer.usuario_id')
-      .select(
-        'vehiculos.*',
-        'empresas.nombre_comercial as empresa_nombre',
-        'unidades_negocio.codigo as cuenca_codigo',
-        'unidades_negocio.nombre as cuenca_nombre',
-        'choferes.id as chofer_id',
-        'choferes.numero_licencia',
-        'p_chofer.nombres as chofer_nombres',
-        'p_chofer.apellidos as chofer_apellidos'
-      )
-      .where({ 'vehiculos.activo': true });
-
+    let vehicles = (await listCollection('vehiculos')).filter((vehicle) => vehicle.activo === true);
     if (req.user.rol === 'ADMIN_EMPRESA') {
-      const empresa = await db('empresas')
-        .where({ admin_usuario_id: req.user.id, activo: true })
-        .first();
-      if (!empresa) {
-        return res.status(404).json({ success: false, message: 'No se encontró una empresa activa para este administrador.' });
-      }
-      query = query.where({ 'vehiculos.empresa_id': empresa.id });
+      const company = await companyForAdmin(req.user.id);
+      if (!company) return res.status(404).json({ success: false, message: 'No se encontró una empresa activa para este administrador.' });
+      vehicles = vehicles.filter((vehicle) => vehicle.empresa_id === company.id);
     }
-
-    if (empresaId) query = query.where({ 'vehiculos.empresa_id': empresaId });
-    if (unidadNegocioId) query = query.where({ 'vehiculos.unidad_negocio_id': unidadNegocioId });
-
-    const vehiculos = await query.orderBy('vehiculos.placa', 'asc');
-
-    res.json({ success: true, data: vehiculos });
+    if (empresaId) vehicles = vehicles.filter((vehicle) => vehicle.empresa_id === empresaId);
+    if (unidadNegocioId) vehicles = vehicles.filter((vehicle) => vehicle.unidad_negocio_id === unidadNegocioId);
+    vehicles.sort((left, right) => String(left.placa).localeCompare(String(right.placa)));
+    const data = await Promise.all(vehicles.map(async (vehicle) => {
+      const [company, unit, drivers] = await Promise.all([
+        getDocument('empresas', vehicle.empresa_id),
+        getDocument('unidades_negocio', vehicle.unidad_negocio_id),
+        queryCollection('choferes', 'vehiculo_id', '==', vehicle.id),
+      ]);
+      const driver = drivers[0];
+      const profile = driver ? await getDocument('perfiles', driver.usuario_id) : null;
+      return {
+        ...vehicle,
+        empresa_nombre: company?.nombre_comercial || '',
+        cuenca_codigo: unit?.codigo || '',
+        cuenca_nombre: unit?.nombre || '',
+        chofer_id: driver?.id || null,
+        numero_licencia: driver?.numero_licencia || null,
+        chofer_nombres: profile?.nombres || null,
+        chofer_apellidos: profile?.apellidos || null,
+      };
+    }));
+    return res.json({ success: true, data });
   } catch (error) {
-    next(error);
+    return next(error);
   }
 };
 
-// Obtener QR vectorial y Base64 de un vehículo por ID
 const getVehicleQR = async (req, res, next) => {
   try {
-    const { id } = req.params;
-
-    const vehiculo = await db('vehiculos')
-      .join('empresas', 'vehiculos.empresa_id', 'empresas.id')
-      .select('vehiculos.*', 'empresas.nombre_comercial as empresa_nombre')
-      .where({ 'vehiculos.id': id })
-      .first();
-
-    if (!vehiculo) {
+    const vehicle = await getDocument('vehiculos', req.params.id);
+    if (!vehicle) return res.status(404).json({ success: false, message: 'Vehículo no encontrado.' });
+    if (!(await canManageVehicle(req.user, vehicle))) {
       return res.status(404).json({ success: false, message: 'Vehículo no encontrado.' });
     }
-
-    const svgString = await generateQRCodeSVG(vehiculo.qr_codigo_seguro);
-    const dataUrl = await generateQRCodeDataURL(vehiculo.qr_codigo_seguro);
-
-    res.json({
+    const company = await getDocument('empresas', vehicle.empresa_id);
+    return res.json({
       success: true,
       data: {
-        placa: vehiculo.placa,
-        empresa: vehiculo.empresa_nombre,
-        tokenSeguro: vehiculo.qr_codigo_seguro,
-        qrSvg: svgString,
-        qrPngBase64: dataUrl,
+        placa: vehicle.placa,
+        empresa: company?.nombre_comercial || '',
+        tokenSeguro: vehicle.qr_codigo_seguro,
+        qrSvg: await generateQRCodeSVG(vehicle.qr_codigo_seguro),
+        qrPngBase64: await generateQRCodeDataURL(vehicle.qr_codigo_seguro),
       },
     });
   } catch (error) {
-    next(error);
+    return next(error);
   }
 };
 
-// Obtener QR por número de placa (ideal para chofer en su app o pasajero)
 const getVehicleQRByPlate = async (req, res, next) => {
   try {
-    const { plate } = req.params;
-    const cleanPlate = plate.toUpperCase().trim();
-
-    const vehiculo = await db('vehiculos')
-      .join('empresas', 'vehiculos.empresa_id', 'empresas.id')
-      .select('vehiculos.*', 'empresas.nombre_comercial as empresa_nombre')
-      .where({ 'vehiculos.placa': cleanPlate })
-      .first();
-
-    if (!vehiculo) {
+    const cleanPlate = normalizePlate(req.params.plate);
+    const matches = await queryCollection('vehiculos', 'placa', '==', cleanPlate);
+    const vehicle = matches.find((item) => item.activo === true);
+    if (!vehicle) {
       return res.status(404).json({ success: false, message: `No se encontró vehículo con placa ${cleanPlate}.` });
     }
-
-    const svgString = await generateQRCodeSVG(vehiculo.qr_codigo_seguro);
-    const dataUrl = await generateQRCodeDataURL(vehiculo.qr_codigo_seguro);
-
-    res.json({
+    const company = await getDocument('empresas', vehicle.empresa_id);
+    return res.json({
       success: true,
       data: {
-        vehiculoId: vehiculo.id,
-        placa: vehiculo.placa,
-        empresa: vehiculo.empresa_nombre,
-        tokenSeguro: vehiculo.qr_codigo_seguro,
-        qrSvg: svgString,
-        qrPngBase64: dataUrl,
+        vehiculoId: vehicle.id,
+        placa: vehicle.placa,
+        empresa: company?.nombre_comercial || '',
+        tokenSeguro: vehicle.qr_codigo_seguro,
+        qrSvg: await generateQRCodeSVG(vehicle.qr_codigo_seguro),
+        qrPngBase64: await generateQRCodeDataURL(vehicle.qr_codigo_seguro),
       },
     });
   } catch (error) {
-    next(error);
+    return next(error);
   }
 };
 
-// Regenerar código QR si se compromete la seguridad física de la calcomanía
 const regenerateQR = async (req, res, next) => {
   try {
-    const { id } = req.params;
-
-    const vehiculo = await db('vehiculos').where({ id }).first();
-    if (!vehiculo) {
+    const vehicle = await getDocument('vehiculos', req.params.id);
+    if (!vehicle) return res.status(404).json({ success: false, message: 'Vehículo no encontrado.' });
+    if (!(await canManageVehicle(req.user, vehicle))) {
       return res.status(404).json({ success: false, message: 'Vehículo no encontrado.' });
     }
-
-    const nuevoToken = generateSecureVehicleToken(vehiculo.placa);
-    const svgString = await generateQRCodeSVG(nuevoToken);
-
-    await db('vehiculos').where({ id }).update({
-      qr_codigo_seguro: nuevoToken,
-      qr_imagen_svg: svgString,
+    const token = generateSecureVehicleToken(vehicle.placa);
+    const svg = await generateQRCodeSVG(token);
+    await db.collection('vehiculos').doc(vehicle.id).update({
+      qr_codigo_seguro: token,
+      qr_imagen_svg: svg,
       updated_at: new Date(),
     });
-
-    // Auditoría
-    await db('auditoria_logs').insert({
-      usuario_id: req.user.id,
+    await writeAuditLog({
+      usuarioId: req.user.id,
       accion: 'REGENERACION_QR_VEHICULO',
       modulo: 'FLOTA',
-      valores_anteriores: JSON.stringify({ placa: vehiculo.placa, tokenPrevio: vehiculo.qr_codigo_seguro }),
-      valores_nuevos: JSON.stringify({ placa: vehiculo.placa, nuevoToken }),
+      valoresAnteriores: { placa: vehicle.placa },
+      valoresNuevos: { placa: vehicle.placa },
     });
-
-    res.json({
+    return res.json({
       success: true,
-      message: `Código QR para la placa ${vehiculo.placa} regenerado con éxito. El QR anterior quedó invalidado.`,
-      data: {
-        placa: vehiculo.placa,
-        nuevoToken,
-        qrSvg: svgString,
-      },
+      message: `Código QR para la placa ${vehicle.placa} regenerado con éxito. El QR anterior quedó invalidado.`,
+      data: { placa: vehicle.placa, nuevoToken: token, qrSvg: svg },
     });
   } catch (error) {
-    next(error);
+    return next(error);
   }
 };
 
-// Reasignar chofer a una placa fija (ADMIN_EMPRESA / SUPER_ADMIN)
 const reassignDriver = async (req, res, next) => {
   try {
-    const { id } = req.params; // vehiculo_id
-    const { choferId } = req.body; // id de la tabla choferes (o null para desvincular)
-
-    const vehiculo = await db('vehiculos').where({ id }).first();
-    if (!vehiculo) {
+    const { id } = req.params;
+    const { choferId } = req.body || {};
+    const vehicle = await getDocument('vehiculos', id);
+    if (!vehicle) return res.status(404).json({ success: false, message: 'Vehículo no encontrado.' });
+    if (!(await canManageVehicle(req.user, vehicle))) {
       return res.status(404).json({ success: false, message: 'Vehículo no encontrado.' });
     }
+    const drivers = await queryCollection('choferes', 'vehiculo_id', '==', id);
+    const nextDriver = choferId ? await getDocument('choferes', choferId) : null;
+    if (choferId && !nextDriver) {
+      return res.status(404).json({ success: false, message: 'Chofer no encontrado.' });
+    }
+    if (nextDriver && nextDriver.empresa_id !== vehicle.empresa_id) {
+      return res.status(400).json({ success: false, message: 'El chofer y el vehículo deben pertenecer a la misma empresa.' });
+    }
+    if (nextDriver?.vehiculo_id && nextDriver.vehiculo_id !== id) {
+      return res.status(409).json({ success: false, message: 'El chofer ya tiene otro vehículo asignado.' });
+    }
 
-    await db.transaction(async (trx) => {
-      // Liberar al chofer que actualmente tenía este vehículo asignado
-      await trx('choferes')
-        .where({ vehiculo_id: id })
-        .update({ vehiculo_id: null, updated_at: new Date() });
-
-      if (choferId) {
-        // Asignar el nuevo chofer asegurando que no tenga otro vehículo asignado previamente
-        await trx('choferes')
-          .where({ id: choferId })
-          .update({ vehiculo_id: id, updated_at: new Date() });
-      }
-
-      await trx('auditoria_logs').insert({
-        usuario_id: req.user.id,
-        accion: 'REASIGNACION_CHOFER_PLACA',
-        modulo: 'FLOTA',
-        valores_nuevos: JSON.stringify({ vehiculoId: id, placa: vehiculo.placa, nuevoChoferId: choferId }),
-      });
+    const batch = db.batch();
+    drivers.forEach((driver) => {
+      batch.update(db.collection('choferes').doc(driver.id), { vehiculo_id: null, updated_at: new Date() });
     });
-
-    res.json({
+    if (nextDriver) {
+      batch.update(db.collection('choferes').doc(nextDriver.id), { vehiculo_id: id, updated_at: new Date() });
+    }
+    await batch.commit();
+    await writeAuditLog({
+      usuarioId: req.user.id,
+      accion: 'REASIGNACION_CHOFER_PLACA',
+      modulo: 'FLOTA',
+      valoresNuevos: { vehiculoId: id, placa: vehicle.placa, nuevoChoferId: choferId || null },
+    });
+    return res.json({
       success: true,
-      message: `Asignación de chofer para la placa ${vehiculo.placa} actualizada correctamente.`,
+      message: `Asignación de chofer para la placa ${vehicle.placa} actualizada correctamente.`,
     });
   } catch (error) {
-    next(error);
+    return next(error);
   }
 };
 
-// Crear nuevo vehículo con generación automática de QR
 const createVehicle = async (req, res, next) => {
   try {
-    const { placa, empresaId, unidadNegocioId, modelo, anioFabricacion, capacidadPasajeros } = req.body;
-
-    if (!placa || !empresaId || !unidadNegocioId) {
+    const {
+      placa,
+      empresaId: requestedCompanyId,
+      unidadNegocioId,
+      modelo,
+      anioFabricacion,
+      capacidadPasajeros,
+    } = req.body || {};
+    if (!placa || !unidadNegocioId ||
+        (req.user.rol === 'SUPER_ADMIN' && !requestedCompanyId)) {
       return res.status(400).json({ success: false, message: 'Placa, empresa y unidad de negocio son obligatorios.' });
     }
-
-    const cleanPlate = placa.toUpperCase().trim();
-    const tokenSeguro = generateSecureVehicleToken(cleanPlate);
-    const svgString = await generateQRCodeSVG(tokenSeguro);
-
-    const [nuevoVehiculo] = await db('vehiculos')
-      .insert({
-        placa: cleanPlate,
-        empresa_id: empresaId,
-        unidad_negocio_id: unidadNegocioId,
-        modelo: modelo || 'Bus Urbano Estándar',
-        anio_fabricacion: anioFabricacion || 2022,
-        capacidad_pasajeros: capacidadPasajeros || 35,
-        qr_codigo_seguro: tokenSeguro,
-        qr_imagen_svg: svgString,
-        activo: true,
-      })
-      .returning('*');
-
-    res.status(201).json({
+    const inputPlate = String(placa).toUpperCase().trim().replace(/\s+/g, '');
+    if (!/^[A-Z0-9]{3}-?[A-Z0-9]{3}$/.test(inputPlate)) {
+      return res.status(400).json({ success: false, message: 'La placa debe tener un formato válido, por ejemplo ABC-123.' });
+    }
+    const cleanPlate = normalizePlate(inputPlate);
+    const existing = (await listCollection('vehiculos'))
+      .filter((vehicle) => normalizePlate(vehicle.placa) === cleanPlate);
+    if (existing.length) return res.status(409).json({ success: false, message: 'La placa ya está registrada.' });
+    const [company, unit] = await Promise.all([
+      req.user.rol === 'ADMIN_EMPRESA'
+        ? companyForAdmin(req.user.id)
+        : getDocument('empresas', requestedCompanyId),
+      getDocument('unidades_negocio', unidadNegocioId),
+    ]);
+    if (!company || company.activo !== true) {
+      return res.status(404).json({ success: false, message: 'Seleccione una empresa activa.' });
+    }
+    if (!unit) return res.status(404).json({ success: false, message: 'La unidad de negocio no existe.' });
+    const token = generateSecureVehicleToken(cleanPlate);
+    const svg = await generateQRCodeSVG(token);
+    const now = new Date();
+    const vehicleRef = db.collection('vehiculos').doc();
+    const plateIndexRef = db.collection('indice_placas')
+      .doc(crypto.createHash('sha256').update(cleanPlate).digest('hex'));
+    const vehicleData = {
+      placa: cleanPlate,
+      empresa_id: company.id,
+      unidad_negocio_id: unidadNegocioId,
+      modelo: modelo || 'Bus Urbano Estándar',
+      anio_fabricacion: anioFabricacion || 2022,
+      capacidad_pasajeros: capacidadPasajeros || 35,
+      qr_codigo_seguro: token,
+      qr_imagen_svg: svg,
+      activo: true,
+      created_at: now,
+      updated_at: now,
+    };
+    try {
+      await db.runTransaction(async (transaction) => {
+        const plateIndex = await transaction.get(plateIndexRef);
+        if (plateIndex.exists) {
+          const conflict = new Error('PLATE_ALREADY_REGISTERED');
+          conflict.code = 'PLATE_ALREADY_REGISTERED';
+          throw conflict;
+        }
+        transaction.create(vehicleRef, vehicleData);
+        transaction.create(plateIndexRef, { vehiculo_id: vehicleRef.id, placa: cleanPlate });
+      });
+    } catch (error) {
+      if (error.code === 'PLATE_ALREADY_REGISTERED') {
+        return res.status(409).json({ success: false, message: 'La placa ya está registrada.' });
+      }
+      return next(error);
+    }
+    return res.status(201).json({
       success: true,
       message: `Vehículo ${cleanPlate} registrado y QR generado con éxito.`,
-      data: nuevoVehiculo,
+      data: { id: vehicleRef.id, ...vehicleData },
     });
   } catch (error) {
-    next(error);
+    return next(error);
   }
 };
 

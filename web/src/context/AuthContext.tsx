@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import axios from 'axios';
 import { api } from '../services/api';
 
 export interface User {
@@ -108,11 +109,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         const accessToken = data.tokens.accessToken;
+        const refreshToken = data.tokens.refreshToken;
         setToken(accessToken);
         setUser(loggedUser);
         setIsDemoMode(false);
 
         localStorage.setItem('sit_pay_admin_token', accessToken);
+        localStorage.setItem('sit_pay_admin_refresh_token', refreshToken);
         localStorage.setItem('sit_pay_admin_user', JSON.stringify(loggedUser));
         localStorage.removeItem('sit_pay_admin_demo');
 
@@ -144,10 +147,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       const accessToken = data.tokens.accessToken;
+      const refreshToken = data.tokens.refreshToken;
       setToken(accessToken);
       setUser(loggedUser);
       setIsDemoMode(false);
       localStorage.setItem('sit_pay_admin_token', accessToken);
+      localStorage.setItem('sit_pay_admin_refresh_token', refreshToken);
       localStorage.setItem('sit_pay_admin_user', JSON.stringify(loggedUser));
       localStorage.removeItem('sit_pay_admin_demo');
       return { success: true };
@@ -160,7 +165,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = () => {
+    const accessToken = localStorage.getItem('sit_pay_admin_token');
+    if (accessToken && localStorage.getItem('sit_pay_admin_demo') !== 'true') {
+      void axios.post(
+        `${import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1'}/auth/logout`,
+        {},
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+      ).catch(() => undefined);
+    }
     localStorage.removeItem('sit_pay_admin_token');
+    localStorage.removeItem('sit_pay_admin_refresh_token');
     localStorage.removeItem('sit_pay_admin_user');
     localStorage.removeItem('sit_pay_admin_demo');
     setToken(null);

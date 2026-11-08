@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants/api_constants.dart';
@@ -5,7 +6,6 @@ import '../../../core/network/api_client.dart';
 import '../../auth/models/user_model.dart';
 import '../../auth/providers/auth_provider.dart';
 import 'payment_screen.dart';
-import 'preferential_screen.dart';
 import 'ticket_history_screen.dart';
 import '../../profile/screens/profile_screen.dart';
 
@@ -21,8 +21,11 @@ class PassengerHomeScreen extends StatefulWidget {
 class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
   final ApiClient _apiClient = ApiClient();
   List<MapEntry<String, int>> _frequentCompanies = [];
+  final Map<String, double> _fares = {};
   bool _isLoadingFrequentCompanies = true;
   bool _frequentCompaniesUnavailable = false;
+  bool _isLoadingFares = true;
+  String? _fareError;
   int _selectedTab = 1;
 
   @override
@@ -30,7 +33,74 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadFrequentCompanies();
+      _loadFares();
     });
+  }
+
+  Future<void> _loadFares() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingFares = true;
+      _fareError = null;
+    });
+
+    try {
+      final response = await _apiClient.dio.get(ApiConstants.fares);
+      final fares = response.data['data'] as List<dynamic>? ?? const [];
+      final today = DateTime.now().toIso8601String().substring(0, 10);
+      final currentFares = <String, Map<String, dynamic>>{};
+
+      for (final item in fares) {
+        if (item is! Map) continue;
+        final fare = Map<String, dynamic>.from(item);
+        final type = fare['tipo_pasajero']?.toString();
+        if (type == null || (type != 'NORMAL' && type != 'UNIVERSITARIA')) {
+          continue;
+        }
+
+        final startsAt = fare['vigencia_inicio']?.toString().substring(0, 10);
+        final endsAt = fare['vigencia_fin']?.toString().substring(0, 10);
+        if ((startsAt != null && startsAt.compareTo(today) > 0) ||
+            (endsAt != null && endsAt.compareTo(today) < 0)) {
+          continue;
+        }
+
+        final current = currentFares[type];
+        final fareId = int.tryParse(fare['id'].toString()) ?? 0;
+        final currentId = int.tryParse(current?['id']?.toString() ?? '') ?? -1;
+        if (current == null || fareId > currentId) {
+          currentFares[type] = fare;
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _fares.clear();
+        for (final type in ['NORMAL', 'UNIVERSITARIA']) {
+          final amount = currentFares[type]?['monto'];
+          if (amount is num) _fares[type] = amount.toDouble();
+        }
+        _isLoadingFares = false;
+        if (_fares.length < 2) {
+          _fareError = 'No están disponibles todas las tarifas vigentes.';
+        }
+      });
+    } on DioException catch (error) {
+      if (!mounted) return;
+      final data = error.response?.data;
+      setState(() {
+        _isLoadingFares = false;
+        _fareError = data is Map && data['message'] is String
+            ? data['message'] as String
+            : 'No se pudieron cargar las tarifas actuales.';
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingFares = false;
+        _fareError = 'No se pudieron cargar las tarifas actuales.';
+      });
+    }
   }
 
   Future<void> _loadFrequentCompanies() async {
@@ -184,6 +254,9 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
               ],
             ),
           ),
+          const SizedBox(height: 16),
+
+          _buildFareCards(isDark),
           const SizedBox(height: 18),
 
           if (auth.isDemoMode) ...[
@@ -244,109 +317,111 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
 
           _buildFrequentCompaniesCard(isDark),
           const SizedBox(height: 20),
-
-          // Estado de Tarifa Preferencial (Ley 26271)
-          InkWell(
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const PreferentialScreen()),
-              );
-            },
-            borderRadius: BorderRadius.circular(16),
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF131B2E) : Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: isDark
-                      ? const Color(0xFF1E293B)
-                      : const Color(0xFFE2E8F0),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF10B981).withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
-                      Icons.school_outlined,
-                      color: Color(0xFF10B981),
-                      size: 26,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Medio Pasaje (Ley 26271)',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 14),
-                        ),
-                        SizedBox(height: 2),
-                        Text(
-                          'Universitario y Escolar al 50 % (S/ 0.50)',
-                          style: TextStyle(fontSize: 12, color: Colors.grey),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Icon(Icons.arrow_forward_ios_rounded,
-                      size: 16, color: Colors.grey),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // Información de Transparencia de Tarifas
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Tarifas del SIT Arequipa:',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                ),
-                SizedBox(height: 6),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('• Pasaje Regular Adulto:',
-                        style: TextStyle(fontSize: 12)),
-                    Text('S/ 1.00',
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 12)),
-                  ],
-                ),
-                SizedBox(height: 4),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('• Medio Pasaje Acreditado (05:00 - 24:00):',
-                        style: TextStyle(fontSize: 12)),
-                    Text('S/ 0.50',
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                            color: Color(0xFF10B981))),
-                  ],
-                ),
-              ],
-            ),
-          ),
         ],
       ),
+    );
+  }
+
+  Widget _buildFareCards(bool isDark) {
+    final borderColor =
+        isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0);
+
+    Widget fareCard({
+      required String title,
+      required String type,
+      required IconData icon,
+      required Color accent,
+      required String description,
+    }) {
+      final amount = _fares[type];
+      return Expanded(
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 116),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF131B2E) : Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: borderColor),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, color: accent, size: 20),
+              const SizedBox(height: 8),
+              Text(title,
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 5),
+              if (_isLoadingFares)
+                const SizedBox(
+                  height: 22,
+                  width: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                Text(
+                  amount == null ? '--' : 'S/ ${amount.toStringAsFixed(2)}',
+                  style: TextStyle(
+                    color: accent,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              const SizedBox(height: 4),
+              Text(description,
+                  style: const TextStyle(color: Colors.grey, fontSize: 10)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Tarifas vigentes hoy',
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            fareCard(
+              title: 'Pasaje normal',
+              type: 'NORMAL',
+              icon: Icons.directions_bus_outlined,
+              accent: const Color(0xFF0F3B60),
+              description: 'Tarifa general',
+            ),
+            const SizedBox(width: 10),
+            fareCard(
+              title: 'Universitario',
+              type: 'UNIVERSITARIA',
+              icon: Icons.school_outlined,
+              accent: const Color(0xFF10B981),
+              description: 'Con acreditación vigente',
+            ),
+          ],
+        ),
+        if (_fareError != null && !_isLoadingFares) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _fareError!,
+                  style: const TextStyle(color: Colors.grey, fontSize: 11),
+                ),
+              ),
+              TextButton(
+                onPressed: _loadFares,
+                child: const Text('Reintentar'),
+              ),
+            ],
+          ),
+        ],
+      ],
     );
   }
 

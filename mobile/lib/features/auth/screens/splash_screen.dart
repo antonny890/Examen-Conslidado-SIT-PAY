@@ -32,13 +32,25 @@ class _SplashScreenState extends State<SplashScreen> {
     if (!mounted) return;
 
     if (hasSession && authProvider.currentUser != null) {
-      if (authProvider.currentUser!.esChofer) {
+      if (authProvider.currentUser!.rol == 'CHOFER') {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => const DriverHomeScreen()),
         );
-      } else {
+      } else if (authProvider.currentUser!.rol == 'PASAJERO') {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => const PassengerHomeScreen()),
+        );
+      } else {
+        await authProvider.logout();
+        if (!mounted) return;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+        );
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Esta cuenta administrativa solo puede ingresar desde la web.'),
+          ),
         );
       }
     } else {

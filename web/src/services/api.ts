@@ -1,9 +1,11 @@
 /**
  * Cliente Axios con Interceptor JWT para el Panel Web Administrativo
  */
-import axios from 'axios';
+import axios, { InternalAxiosRequestConfig } from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
+type RetryConfig = InternalAxiosRequestConfig & { _sitPayRetry?: boolean };
+let refreshInProgress: Promise<string | null> | null = null;
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
@@ -12,7 +14,7 @@ export const api = axios.create({
   },
 });
 
-// Interceptor de petición para inyectar token JWT
+// Interceptor de petición para inyectar el Firebase ID token.
 api.interceptors.request.use(
   (config) => {
     if (localStorage.getItem('sit_pay_admin_demo') === 'true') {
@@ -28,17 +30,51 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Interceptor de respuesta para manejo de expiración de sesión (401)
+const clearSession = () => {
+  localStorage.removeItem('sit_pay_admin_token');
+  localStorage.removeItem('sit_pay_admin_refresh_token');
+  localStorage.removeItem('sit_pay_admin_user');
+  if (window.location.pathname !== '/login') window.location.href = '/login';
+};
+
+const refreshAccessToken = async (): Promise<string | null> => {
+  const refreshToken = localStorage.getItem('sit_pay_admin_refresh_token');
+  if (!refreshToken) return null;
+  if (!refreshInProgress) {
+    refreshInProgress = axios
+      .post(`${API_BASE_URL}/auth/refresh`, { refreshToken })
+      .then((response) => {
+        const tokens = response.data?.data?.tokens;
+        if (!tokens?.accessToken || !tokens?.refreshToken) return null;
+        localStorage.setItem('sit_pay_admin_token', tokens.accessToken);
+        localStorage.setItem('sit_pay_admin_refresh_token', tokens.refreshToken);
+        return tokens.accessToken as string;
+      })
+      .catch(() => null)
+      .finally(() => {
+        refreshInProgress = null;
+      });
+  }
+  return refreshInProgress;
+};
+
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
     const isDemoMode = localStorage.getItem('sit_pay_admin_demo') === 'true';
-    if (!isDemoMode && (error.response?.statusCode === 401 || error.response?.status === 401)) {
-      localStorage.removeItem('sit_pay_admin_token');
-      localStorage.removeItem('sit_pay_admin_user');
-      if (window.location.pathname !== '/login') {
-        window.location.href = '/login';
+    const config = error.config as RetryConfig | undefined;
+    const isAuthenticationRequest =
+      config?.url?.includes('/auth/login') ||
+      config?.url?.includes('/auth/google') ||
+      config?.url?.includes('/auth/refresh');
+    if (!isDemoMode && error.response?.status === 401 && config && !config._sitPayRetry && !isAuthenticationRequest) {
+      config._sitPayRetry = true;
+      const accessToken = await refreshAccessToken();
+      if (accessToken) {
+        config.headers.Authorization = `Bearer ${accessToken}`;
+        return api.request(config);
       }
+      clearSession();
     }
     return Promise.reject(error);
   }

@@ -15,7 +15,7 @@ Enfoque en la transacción financiera con cumplimiento normativo:
 - **Ley N° 26271**: Pasaje diferenciado escolar y universitario (50% de 05:00 a 24:00 hrs en días hábiles).
 - **Ley N° 29571**: Código del Consumidor (Boleta digital obligatoria, código único y libro de reclamos).
 - **Ley N° 29733**: Protección de Datos Personales (Consentimiento explícito, minimización hacia el chofer y trazabilidad).
-SIT-Pay no almacena dinero ni mantiene saldos. Los cobros requieren una API bancaria externa; esta integración aún no está configurada.
+SIT-Pay no almacena dinero ni mantiene saldos. Los pagos de esta versión son simulaciones con tarjetas ficticias de prueba; no se conecta a un banco ni se realizan cargos reales. Solo se conserva una referencia enmascarada y nunca se guardan el número completo de tarjeta ni el CVV.
     `,
     contact: {
       name: 'Equipo SIT-Pay Arequipa — Universidad Continental',
@@ -33,7 +33,7 @@ SIT-Pay no almacena dinero ni mantiene saldos. Los cobros requieren una API banc
       BearerAuth: {
         type: 'http',
         scheme: 'bearer',
-        bearerFormat: 'JWT',
+        bearerFormat: 'Firebase ID Token',
         description: 'Ingrese su token JWT de autenticación Bearer (obtenido al iniciar sesión).',
       },
     },
@@ -56,30 +56,35 @@ SIT-Pay no almacena dinero ni mantiene saldos. Los cobros requieren una API banc
       },
       RegisterPassengerRequest: {
         type: 'object',
-        required: ['email', 'password', 'nombres', 'apellidos', 'numeroDocumento', 'consentimientoDatos'],
+        required: ['email', 'password', 'nombres', 'apellidos', 'numeroDocumento', 'consentimientoDatos', 'consentimientoConsultaDni'],
         properties: {
           email: { type: 'string', format: 'email', example: 'nuevo.pasajero@gmail.com' },
-          password: { type: 'string', example: 'SitPay2026!' },
-          nombres: { type: 'string', example: 'Carlos Alberto' },
-          apellidos: { type: 'string', example: 'Mendoza Flores' },
-          tipoDocumento: { type: 'string', enum: ['DNI', 'CE'], example: 'DNI' },
-          numeroDocumento: { type: 'string', example: '72891045' },
+          password: { type: 'string', minLength: 8, example: 'SitPay2026!' },
+          nombres: { type: 'string', maxLength: 100, example: 'Carlos Alberto' },
+          apellidos: { type: 'string', maxLength: 100, example: 'Mendoza Flores' },
+          tipoDocumento: { type: 'string', enum: ['DNI'], example: 'DNI' },
+          numeroDocumento: { type: 'string', pattern: '^\\d{8}$', example: '72891045' },
           telefono: { type: 'string', example: '958123456' },
           consentimientoDatos: { type: 'boolean', example: true },
+          consentimientoConsultaDni: { type: 'boolean', example: true },
         },
       },
       PaymentQRRequest: {
         type: 'object',
-        required: ['qrCode'],
+        required: ['qrCode', 'paymentMethodId', 'idempotencyKey'],
         properties: {
           qrCode: { type: 'string', example: 'SIT-VEH-V7A890-7F89C1D4E2' },
+          paymentMethodId: { type: 'string', description: 'Identificador de tarjeta ficticia' },
+          idempotencyKey: { type: 'string', description: 'Clave única para evitar boletas duplicadas' },
         },
       },
       PaymentPlateRequest: {
         type: 'object',
-        required: ['plate'],
+        required: ['plate', 'paymentMethodId', 'idempotencyKey'],
         properties: {
           plate: { type: 'string', example: 'V7A-890' },
+          paymentMethodId: { type: 'string', description: 'Identificador de tarjeta ficticia' },
+          idempotencyKey: { type: 'string', description: 'Clave única para evitar boletas duplicadas' },
         },
       },
       PreferentialEmailRequest: {
@@ -169,12 +174,13 @@ SIT-Pay no almacena dinero ni mantiene saldos. Los cobros requieren una API banc
         summary: 'Inicio de sesión para todos los roles (Pasajero, Chofer, Admin Empresa, Super Admin)',
         requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/LoginRequest' } } } },
         responses: {
-          200: { description: 'Login exitoso, devuelve JWT y perfil' },
+          200: { description: 'Login exitoso, devuelve Firebase ID/refresh tokens y perfil' },
           401: { description: 'Credenciales inválidas' },
           403: { description: 'Cuenta inactiva o correo pendiente de confirmación' },
         },
       },
-      '/auth/google': {
+    },
+    '/auth/google': {
         post: {
           tags: ['Autenticación'],
           summary: 'Iniciar sesión en el panel con Google para una cuenta administrativa existente',
@@ -193,13 +199,49 @@ SIT-Pay no almacena dinero ni mantiene saldos. Los cobros requieren una API banc
             },
           },
           responses: {
-            200: { description: 'Login exitoso, devuelve JWT y perfil administrativo' },
+            200: { description: 'Login exitoso, devuelve Firebase ID/refresh tokens y perfil administrativo' },
             403: { description: 'La cuenta Google no corresponde a una cuenta administrativa activa de SIT-Pay' },
             503: { description: 'Inicio con Google no configurado' },
           },
         },
+    },
+    '/auth/google/passenger': {
+      post: {
+        tags: ['Autenticación'],
+        summary: 'Iniciar sesión o registrar un pasajero con Google',
+        description: 'Verifica el ID token con GOOGLE_CLIENT_ID. En la primera llamada, envía solo credential para consultar si necesita completar el registro. En la segunda, envía los datos consultados por DNI y los consentimientos aceptados.',
+        security: [],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['credential'],
+                properties: {
+                  credential: { type: 'string', description: 'ID token de Google' },
+                  numeroDocumento: { type: 'string', pattern: '^\\d{8}$' },
+                  nombres: { type: 'string' },
+                  apellidos: { type: 'string' },
+                  telefono: { type: 'string', nullable: true },
+                  consentimientoDatos: { type: 'boolean' },
+                  consentimientoConsultaDni: { type: 'boolean' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: 'Cuenta existente autenticada o registro pendiente de completar' },
+          201: { description: 'Cuenta de pasajero creada y autenticada' },
+          400: { description: 'Datos incompletos, consentimientos faltantes o nombres que no coinciden con el DNI' },
+          401: { description: 'Credencial de Google inválida o correo no verificado' },
+          409: { description: 'El correo o DNI ya está registrado' },
+          503: { description: 'Google OAuth o consulta DNI no configurados' },
+        },
       },
-      '/auth/forgot-password': {
+    },
+    '/auth/forgot-password': {
         post: {
           tags: ['Autenticación'],
           summary: 'Enviar código de recuperación al correo de la cuenta',
@@ -221,8 +263,8 @@ SIT-Pay no almacena dinero ni mantiene saldos. Los cobros requieren una API banc
             503: { description: 'El servicio SMTP no está disponible' },
           },
         },
-      },
-      '/auth/reset-password': {
+    },
+    '/auth/reset-password': {
         post: {
           tags: ['Autenticación'],
           summary: 'Cambiar contraseña con código de recuperación de un solo uso',
@@ -238,7 +280,6 @@ SIT-Pay no almacena dinero ni mantiene saldos. Los cobros requieren una API banc
                     email: { type: 'string', format: 'email' },
                     token: { type: 'string', pattern: '^\\d{6}$' },
                     newPassword: { type: 'string', minLength: 8 },
-                  },
                 },
               },
             },
@@ -253,12 +294,13 @@ SIT-Pay no almacena dinero ni mantiene saldos. Los cobros requieren una API banc
     '/auth/register': {
       post: {
         tags: ['Autenticación'],
-        summary: 'Registro público de nuevos pasajeros con consentimiento Ley 29733',
+        summary: 'Registro público de pasajeros con verificación de identidad por DNI y consentimientos',
         requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/RegisterPassengerRequest' } } } },
         responses: {
           201: { description: 'Cuenta creada como pendiente; no devuelve sesión hasta verificar el correo' },
-          400: { description: 'Faltan datos obligatorios o consentimiento denegado' },
-          409: { description: 'El correo electrónico ya existe' },
+          400: { description: 'Datos inválidos, nombres que no coinciden con el DNI o consentimiento denegado' },
+          409: { description: 'El correo electrónico o DNI ya existe' },
+          503: { description: 'Consulta de DNI no configurada' },
         },
       },
     },
@@ -266,7 +308,7 @@ SIT-Pay no almacena dinero ni mantiene saldos. Los cobros requieren una API banc
       post: {
         tags: ['Autenticación'],
         summary: 'Consultar nombre asociado a un DNI mediante Migo',
-        description: 'El backend mantiene el token Migo fuera de la aplicación móvil. Requiere consentimiento del usuario y MIGO_API_TOKEN configurado en el servidor. No necesita consultar PostgreSQL.',
+        description: 'El backend mantiene el token Migo fuera de la aplicación móvil y persiste la respuesta del proveedor en Firestore. La consulta no equivale a una verificación oficial de identidad.',
         security: [],
         requestBody: {
           required: true,
@@ -274,9 +316,10 @@ SIT-Pay no almacena dinero ni mantiene saldos. Los cobros requieren una API banc
             'application/json': {
               schema: {
                 type: 'object',
-                required: ['dni'],
+                required: ['dni', 'consentimientoConsultaDni'],
                 properties: {
                   dni: { type: 'string', pattern: '^\\d{8}$', example: '00000000' },
+                  consentimientoConsultaDni: { type: 'boolean', enum: [true] },
                 },
               },
             },
@@ -295,7 +338,7 @@ SIT-Pay no almacena dinero ni mantiene saldos. Los cobros requieren una API banc
       post: {
         tags: ['Pagos de Pasaje'],
         summary: 'Consultar tarifa y vehículo sin iniciar un pago',
-        description: 'Devuelve la tarifa estimada y paymentAvailable=false mientras la API bancaria no esté integrada.',
+        description: 'Devuelve la tarifa estimada. El pago posterior es una simulación sin cargo bancario real.',
         security: [{ BearerAuth: [] }],
         requestBody: {
           required: true,
@@ -312,7 +355,7 @@ SIT-Pay no almacena dinero ni mantiene saldos. Los cobros requieren una API banc
           },
         },
         responses: {
-          200: { description: 'Tarifa estimada; paymentAvailable es false' },
+          200: { description: 'Tarifa estimada; paymentMode es SIMULATED' },
           400: { description: 'Debe proporcionar la placa o el código QR' },
           404: { description: 'Vehículo o QR no encontrado' },
         },
@@ -321,34 +364,76 @@ SIT-Pay no almacena dinero ni mantiene saldos. Los cobros requieren una API banc
     '/payments/pay/qr': {
       post: {
         tags: ['Pagos de Pasaje'],
-        summary: 'Pago por QR (deshabilitado hasta integrar el banco)',
-        description: 'Actualmente no inicia pagos ni crea transacciones o comprobantes. Devuelve PAYMENT_PROVIDER_NOT_CONFIGURED.',
+        summary: 'Simular el pago por QR',
+        description: 'Crea una transacción de prueba y una boleta. No se conecta a un banco ni cobra dinero real.',
         security: [{ BearerAuth: [] }],
         requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/PaymentQRRequest' } } } },
         responses: {
-          400: { description: 'Debe proporcionar el código QR del vehículo' },
+          201: { description: 'Pago simulado y boleta creados' },
+          400: { description: 'Faltan datos de la operación o la tarjeta' },
           404: { description: 'Vehículo o QR no encontrado' },
-          503: {
-            description: 'API bancaria no configurada; no se inició el pago',
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } },
-          },
         },
       },
     },
     '/payments/pay/plate': {
       post: {
         tags: ['Pagos de Pasaje'],
-        summary: 'Pago por placa (deshabilitado hasta integrar el banco)',
-        description: 'Actualmente no inicia pagos ni crea transacciones o comprobantes. Devuelve PAYMENT_PROVIDER_NOT_CONFIGURED.',
+        summary: 'Simular el pago por placa',
+        description: 'Crea una transacción de prueba y una boleta. No se conecta a un banco ni cobra dinero real.',
         security: [{ BearerAuth: [] }],
         requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/PaymentPlateRequest' } } } },
         responses: {
-          400: { description: 'Debe proporcionar la placa del vehículo' },
+          201: { description: 'Pago simulado y boleta creados' },
+          400: { description: 'Faltan datos de la operación o la tarjeta' },
           404: { description: 'Placa no registrada en el sistema SIT' },
-          503: {
-            description: 'API bancaria no configurada; no se inició el pago',
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } },
+        },
+      },
+    },
+    '/payment-methods': {
+      get: {
+        tags: ['Pagos de Pasaje'],
+        summary: 'Listar tarjetas ficticias del pasajero autenticado',
+        security: [{ BearerAuth: [] }],
+        responses: { 200: { description: 'Tarjetas propias con datos enmascarados' } },
+      },
+      post: {
+        tags: ['Pagos de Pasaje'],
+        summary: 'Agregar una tarjeta ficticia de prueba',
+        description: 'Solo acepta números de prueba que empiezan en 9999. El backend no persiste el número completo ni el CVV.',
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['cardholder', 'cardNumber', 'expiryMonth', 'expiryYear', 'cvv'],
+                properties: {
+                  cardholder: { type: 'string', example: 'USUARIO DE PRUEBA' },
+                  cardNumber: { type: 'string', example: '9999999999999999' },
+                  expiryMonth: { type: 'integer', example: 12 },
+                  expiryYear: { type: 'integer', example: 2030 },
+                  cvv: { type: 'string', example: '123' },
+                },
+              },
+            },
           },
+        },
+        responses: {
+          201: { description: 'Tarjeta de prueba creada y enmascarada' },
+          400: { description: 'Datos inválidos o no corresponden a una tarjeta ficticia' },
+        },
+      },
+    },
+    '/payment-methods/{id}': {
+      delete: {
+        tags: ['Pagos de Pasaje'],
+        summary: 'Eliminar una tarjeta ficticia propia',
+        security: [{ BearerAuth: [] }],
+        parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
+        responses: {
+          200: { description: 'Tarjeta eliminada' },
+          404: { description: 'Tarjeta no encontrada' },
         },
       },
     },
@@ -395,12 +480,58 @@ SIT-Pay no almacena dinero ni mantiene saldos. Los cobros requieren una API banc
       },
     },
     '/claims': {
+      get: {
+        tags: ['Reclamos e Incidencias (Ley 29571)'],
+        summary: 'Listar reclamos del destinatario autenticado',
+        description: 'ADMIN_EMPRESA recibe solo reclamos para su empresa; SUPER_ADMIN recibe solo incidencias dirigidas al sistema.',
+        security: [{ BearerAuth: [] }],
+        responses: {
+          200: { description: 'Lista de reclamos con pasajero, empresa, vehículo, destinatario y estado' },
+          403: { description: 'Rol no autorizado' },
+        },
+      },
       post: {
         tags: ['Reclamos e Incidencias (Ley 29571)'],
-        summary: 'Interponer reclamo asociado a un pasaje o cobro indebido',
+        summary: 'Crear reclamo para una empresa o incidencia para el sistema',
         security: [{ BearerAuth: [] }],
         requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/ClaimRequest' } } } },
         responses: { 201: { description: 'Reclamo formalmente registrado' } },
+      },
+    },
+    '/claims/{id}/resolve': {
+      put: {
+        tags: ['Reclamos e Incidencias (Ley 29571)'],
+        summary: 'Responder un reclamo que corresponde al destinatario autenticado',
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['estado', 'respuesta'],
+                properties: {
+                  estado: { type: 'string', enum: ['RESUELTO', 'RECHAZADO', 'EN_REVISION'] },
+                  respuesta: { type: 'string', minLength: 1, maxLength: 2000 },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: 'Respuesta registrada y notificada al pasajero' },
+          400: { description: 'Estado o respuesta inválidos' },
+          404: { description: 'Reclamo no encontrado para este destinatario' },
+        },
+      },
+    },
+    '/fares': {
+      get: {
+        tags: ['Tarifas (Ley 26271)'],
+        summary: 'Listar tarifas activas para mostrar las tarifas vigentes en la app',
+        security: [],
+        responses: { 200: { description: 'Tarifas con tipo, monto y fechas de vigencia' } },
       },
     },
     '/company/dashboard': {

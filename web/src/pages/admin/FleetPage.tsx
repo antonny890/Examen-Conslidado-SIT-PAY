@@ -2,9 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { Bus, QrCode, Plus, Search, Filter, RefreshCw, Printer } from 'lucide-react';
 import { api } from '../../services/api';
 import { QRModal } from '../../components/common/QRModal';
+import { useAuth } from '../../context/AuthContext';
 
 export const FleetPage: React.FC = () => {
+  const { user } = useAuth();
   const [vehicles, setVehicles] = useState<any[]>([]);
+  const [companies, setCompanies] = useState<any[]>([]);
+  const [businessUnits, setBusinessUnits] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedQR, setSelectedQR] = useState<{
@@ -19,7 +23,8 @@ export const FleetPage: React.FC = () => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newPlate, setNewPlate] = useState('');
   const [newModel, setNewModel] = useState('');
-  const [newUnitId, setNewUnitId] = useState('3');
+  const [newUnitId, setNewUnitId] = useState('');
+  const [newCompanyId, setNewCompanyId] = useState(user?.empresaId || '');
 
   useEffect(() => {
     fetchVehicles();
@@ -27,9 +32,22 @@ export const FleetPage: React.FC = () => {
 
   const fetchVehicles = async () => {
     try {
-      const res = await api.get('/vehicles');
+      const [res, unitsResponse] = await Promise.all([
+        api.get('/vehicles'),
+        api.get('/company/business-units'),
+      ]);
       if (res.data.success) {
         setVehicles(res.data.data);
+      }
+      if (unitsResponse.data.success) {
+        setBusinessUnits(unitsResponse.data.data);
+        setNewUnitId((current) => current || unitsResponse.data.data[0]?.id || '');
+      }
+      if (user?.rol === 'SUPER_ADMIN') {
+        const companiesResponse = await api.get('/admin/companies');
+        if (companiesResponse.data.success) {
+          setCompanies(companiesResponse.data.data.filter((company: any) => company.activo));
+        }
       }
     } catch (_) {} finally {
       setLoading(false);
@@ -72,8 +90,8 @@ export const FleetPage: React.FC = () => {
     try {
       await api.post('/vehicles', {
         placa: newPlate,
-        empresaId: 'e1000000-0000-0000-0000-000000000001',
-        unidadNegocioId: parseInt(newUnitId, 10),
+        ...(user?.rol === 'SUPER_ADMIN' ? { empresaId: newCompanyId } : {}),
+        unidadNegocioId: newUnitId,
         modelo: newModel || 'Mercedes-Benz Urbano',
       });
       setIsAddModalOpen(false);
@@ -209,6 +227,24 @@ export const FleetPage: React.FC = () => {
                   className="w-full mt-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono uppercase"
                 />
               </div>
+              {user?.rol === 'SUPER_ADMIN' && (
+                <div>
+                  <label className="font-semibold text-slate-300">Empresa</label>
+                  <select
+                    value={newCompanyId}
+                    onChange={(e) => setNewCompanyId(e.target.value)}
+                    required
+                    className="w-full mt-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white"
+                  >
+                    <option value="">Selecciona una empresa</option>
+                    {companies.map((company) => (
+                      <option key={company.id} value={company.id}>
+                        {company.nombre_comercial}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="font-semibold text-slate-300">Modelo / Marca</label>
                 <input
@@ -224,12 +260,15 @@ export const FleetPage: React.FC = () => {
                 <select
                   value={newUnitId}
                   onChange={(e) => setNewUnitId(e.target.value)}
+                  required
                   className="w-full mt-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white"
                 >
-                  <option value="2">C2 Cono Norte - Cerro Colorado</option>
-                  <option value="3">C3 Cayma</option>
-                  <option value="4">C4 Selva Alegre - Miraflores</option>
-                  <option value="6">C6 Paucarpata - Miguel Grau</option>
+                  <option value="">Selecciona una unidad</option>
+                  {businessUnits.map((unit) => (
+                    <option key={unit.id} value={unit.id}>
+                      {unit.codigo} {unit.nombre}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -243,6 +282,7 @@ export const FleetPage: React.FC = () => {
                 </button>
                 <button
                   type="submit"
+                  disabled={!newUnitId || (user?.rol === 'SUPER_ADMIN' && !newCompanyId)}
                   className="flex-1 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold"
                 >
                   Guardar y Generar QR

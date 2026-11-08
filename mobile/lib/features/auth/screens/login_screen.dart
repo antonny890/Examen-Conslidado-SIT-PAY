@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../services/google_auth_service.dart';
 import 'register_screen.dart';
 import 'forgot_password_screen.dart';
 import '../../passenger/screens/passenger_home_screen.dart';
 import '../../driver/screens/driver_home_screen.dart';
+import '../models/google_sign_in_result.dart';
 
 /// Pantalla de Inicio de Sesión Unificada (Pasajero y Chofer)
 /// Tras el login, redirige automáticamente a la vista correspondiente según el rol.
@@ -20,6 +22,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
+  bool _isSigningInWithGoogle = false;
 
   @override
   void dispose() {
@@ -56,6 +59,68 @@ class _LoginScreenState extends State<LoginScreen> {
           backgroundColor: Colors.red.shade700,
         ),
       );
+    }
+  }
+
+  Future<void> _handleGoogleSignIn() async {
+    setState(() => _isSigningInWithGoogle = true);
+    try {
+      final googleAccount = await GoogleAuthService.signIn();
+      if (!mounted || googleAccount == null) return;
+
+      final auth = context.read<AuthProvider>();
+      final outcome = await auth.beginGooglePassengerSignIn(googleAccount);
+      if (!mounted) return;
+
+      if (outcome == GoogleSignInOutcome.signedIn && auth.currentUser != null) {
+        final destination = auth.currentUser!.esChofer
+            ? const DriverHomeScreen()
+            : const PassengerHomeScreen();
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => destination),
+        );
+      } else if (outcome == GoogleSignInOutcome.registrationRequired) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => RegisterScreen(googleSignInResult: googleAccount),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content:
+                Text(auth.errorMessage ?? 'No se pudo iniciar con Google.'),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+      }
+    } on StateError catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.message.toString()),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+    } on UnsupportedError catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.message ?? 'Google no está disponible aquí.'),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+              'No se pudo abrir Google. Verifica la configuración de la aplicación.'),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSigningInWithGoogle = false);
     }
   }
 
@@ -258,7 +323,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 // Botón Iniciar Sesión
                 ElevatedButton(
-                  onPressed: auth.isLoading ? null : _handleLogin,
+                  onPressed: auth.isLoading || _isSigningInWithGoogle
+                      ? null
+                      : _handleLogin,
                   child: auth.isLoading
                       ? const SizedBox(
                           height: 22,
@@ -268,6 +335,26 @@ class _LoginScreenState extends State<LoginScreen> {
                         )
                       : const Text('Ingresar a SIT-Pay'),
                 ),
+                if (GoogleAuthService.isSupportedPlatform) ...[
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: auth.isLoading || _isSigningInWithGoogle
+                        ? null
+                        : _handleGoogleSignIn,
+                    icon: _isSigningInWithGoogle
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.account_circle_outlined),
+                    label: Text(
+                      _isSigningInWithGoogle
+                          ? 'Conectando con Google...'
+                          : 'Continuar con Google',
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 24),
 
                 // Enlace a Registro (Solo para Pasajeros)

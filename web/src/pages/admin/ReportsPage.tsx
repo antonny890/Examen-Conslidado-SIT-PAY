@@ -28,8 +28,8 @@ export const ReportsPage: React.FC = () => {
       document.body.appendChild(link);
       link.click();
       link.remove();
-    } catch (_) {
-      alert('Descarga de reporte CSV iniciada.');
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'No se pudo descargar el reporte CSV.');
     } finally {
       setDownloading(false);
     }

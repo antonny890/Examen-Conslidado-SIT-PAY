@@ -1,137 +1,393 @@
-/**
- * Controlador de Autenticación y Cuentas
- * Roles: SUPER_ADMIN, ADMIN_EMPRESA, CHOFER, PASAJERO
- */
-const bcrypt = require('bcrypt');
-const crypto = require('crypto');
-const jwt = require('jsonwebtoken');
+const crypto = require('node:crypto');
 const { OAuth2Client } = require('google-auth-library');
-const db = require('../../config/db');
-const jwtConfig = require('../../config/jwt');
+const { FieldValue } = require('firebase-admin/firestore');
+const { auth, db } = require('../../config/firebase');
+const firebaseAuth = require('../../services/firebaseAuthService');
+const {
+  createUserAccount,
+  deleteUserAccount,
+  findUserByEmail,
+} = require('../../services/userService');
+const {
+  DniProviderError,
+  lookupDniName,
+  parseDniName,
+} = require('../../services/dniService');
 const {
   sendPasswordResetCode,
   sendRegistrationVerificationCode,
 } = require('../../services/emailService');
 
 const googleOAuthClient = new OAuth2Client();
+const COLLECTION = 'usuarios';
+const PROFILES = 'perfiles';
 
-// Generador de tokens JWT de acceso y refresco
-const generateTokens = (usuario, rolCodigo) => {
-  const payload = {
-    id: usuario.id,
-    email: usuario.email,
-    rol: rolCodigo,
-    rolId: usuario.rol_id,
-  };
+const normalizeEmail = (email) =>
+  typeof email === 'string' ? email.trim().toLowerCase() : '';
 
-  const accessToken = jwt.sign(payload, jwtConfig.secret, { expiresIn: jwtConfig.expiresIn });
-  const refreshToken = jwt.sign(payload, jwtConfig.refreshSecret, { expiresIn: jwtConfig.refreshExpiresIn });
+const getUserByEmail = findUserByEmail;
 
-  return { accessToken, refreshToken };
+const getProfile = async (uid) => {
+  const snapshot = await db.collection(PROFILES).doc(uid).get();
+  return snapshot.exists ? snapshot.data() : null;
 };
 
-// 1. Registro de Pasajero (Único rol con auto-registro público)
+const saveDniLookup = async ({ dni, fullName, identity, userProvided = null, uid = null }) => {
+  const dniHash = crypto.createHash('sha256').update(dni).digest('hex');
+  const now = new Date();
+  const providerData = {
+    dni,
+    nombre: fullName,
+    nombres: identity.nombres,
+    apellidos: identity.apellidos,
+  };
+  await db.collection('consultas_dni').doc(dniHash).set({
+    numero_documento: dni,
+    datos_proveedor: providerData,
+    fuente: 'MIGO',
+    estado_consulta: 'CONSULTADA',
+    verificacion_oficial: false,
+    consultado_at: now,
+    ...(userProvided ? { datos_proporcionados: userProvided } : {}),
+    ...(uid ? { usuario_id: uid } : {}),
+    updated_at: now,
+  }, { merge: true });
+
+  return {
+    fuente: 'MIGO',
+    estado: 'CONSULTADA',
+    verificacionOficial: false,
+    consultadoAt: now,
+    datosProveedor: providerData,
+  };
+};
+
+const lookupIdentity = async (dni, userProvided, uid = null) => {
+  const fullName = await lookupDniName(dni);
+  const identity = parseDniName(fullName);
+  const record = await saveDniLookup({ dni, fullName, identity, userProvided, uid });
+  return { ...identity, fullName, record };
+};
+
+const namesMatch = (left, right) =>
+  left.replaceAll('_', ' ').trim().replace(/\s+/g, ' ').toLocaleLowerCase('es-PE') ===
+  right.replaceAll('_', ' ').trim().replace(/\s+/g, ' ').toLocaleLowerCase('es-PE');
+
+const createAccount = createUserAccount;
+
+const reserveDni = async (dni) => {
+  const dniHash = crypto.createHash('sha256').update(dni).digest('hex');
+  const reference = db.collection('consultas_dni').doc(dniHash);
+  const reservationId = crypto.randomUUID();
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(reference);
+    const current = snapshot.exists ? snapshot.data() : {};
+    const reservationExpiresAt = current.reservation_expires_at?.toDate
+      ? current.reservation_expires_at.toDate()
+      : new Date(current.reservation_expires_at || 0);
+    if (current.usuario_id ||
+        (current.reservation_id && reservationExpiresAt.getTime() > Date.now())) {
+      const conflict = new Error('DNI_ALREADY_REGISTERED');
+      conflict.code = 'DNI_ALREADY_REGISTERED';
+      throw conflict;
+    }
+    transaction.set(reference, {
+      reservation_id: reservationId,
+      reservation_expires_at: new Date(Date.now() + 30 * 60 * 1000),
+      updated_at: new Date(),
+    }, { merge: true });
+  });
+  return { reference, reservationId };
+};
+
+const releaseDniReservation = async ({ reference, reservationId }) => {
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(reference);
+    if (snapshot.exists && snapshot.data().reservation_id === reservationId) {
+      transaction.update(reference, {
+        reservation_id: FieldValue.delete(),
+        reservation_expires_at: FieldValue.delete(),
+        updated_at: new Date(),
+      });
+    }
+  });
+};
+
+const linkDniToUser = async ({ reference, reservationId, uid }) => {
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(reference);
+    if (!snapshot.exists || snapshot.data().reservation_id !== reservationId || snapshot.data().usuario_id) {
+      const conflict = new Error('DNI_ALREADY_REGISTERED');
+      conflict.code = 'DNI_ALREADY_REGISTERED';
+      throw conflict;
+    }
+    transaction.update(reference, {
+      usuario_id: uid,
+      reservation_id: FieldValue.delete(),
+      reservation_expires_at: FieldValue.delete(),
+      updated_at: new Date(),
+    });
+  });
+};
+
+const issueSession = async (uid) => {
+  const tokenResult = await firebaseAuth.signInWithCustomToken(uid);
+  return {
+    accessToken: tokenResult.idToken,
+    refreshToken: tokenResult.refreshToken,
+  };
+};
+
+const getSessionUser = async (user, picture = null) => {
+  const profile = await getProfile(user.id);
+  let company = null;
+  let driverInfo = null;
+
+  if (user.rol_codigo === 'ADMIN_EMPRESA') {
+    const snapshot = await db.collection('empresas')
+      .where('admin_usuario_id', '==', user.id)
+      .limit(1)
+      .get();
+    if (!snapshot.empty) {
+      company = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+    }
+  } else if (user.rol_codigo === 'CHOFER') {
+    const driverSnapshot = await db.collection('choferes')
+      .where('usuario_id', '==', user.id)
+      .limit(1)
+      .get();
+    if (!driverSnapshot.empty) {
+      const driver = { id: driverSnapshot.docs[0].id, ...driverSnapshot.docs[0].data() };
+      const [vehicleSnapshot, companySnapshot] = await Promise.all([
+        driver.vehiculo_id
+          ? db.collection('vehiculos').doc(driver.vehiculo_id).get()
+          : Promise.resolve(null),
+        driver.empresa_id
+          ? db.collection('empresas').doc(driver.empresa_id).get()
+          : Promise.resolve(null),
+      ]);
+      const vehicle = vehicleSnapshot?.exists
+        ? { id: vehicleSnapshot.id, ...vehicleSnapshot.data() }
+        : null;
+      const companyData = companySnapshot?.exists ? companySnapshot.data() : null;
+      let businessUnit = null;
+      if (vehicle?.unidad_negocio_id) {
+        const unitSnapshot = await db.collection('unidades_negocio').doc(vehicle.unidad_negocio_id).get();
+        if (unitSnapshot.exists) businessUnit = unitSnapshot.data();
+      }
+      driverInfo = {
+        chofer_id: driver.id,
+        vehiculo_id: vehicle?.id || null,
+        placa: vehicle?.placa || null,
+        qr_codigo_seguro: vehicle?.qr_codigo_seguro || null,
+        empresa_id: driver.empresa_id,
+        empresa_nombre: companyData?.nombre_comercial || '',
+        unidad_codigo: businessUnit?.codigo || '',
+        unidad_nombre: businessUnit?.nombre || '',
+      };
+    }
+  }
+
+  return {
+    id: user.id,
+    email: user.email,
+    rol: user.rol_codigo,
+    rolNombre: user.rol_nombre || user.rol_codigo,
+    nombres: profile?.nombres || '',
+    apellidos: profile?.apellidos || '',
+    fotoUrl: profile?.foto_url || picture || null,
+    empresaId: company?.id || null,
+    empresaNombre: company?.nombre_comercial || null,
+    empresaActiva: company?.activo ?? null,
+    estado: user.estado,
+    emailVerificado: user.email_verificado === true,
+    googleConnected: Boolean(user.google_subject),
+    ...(driverInfo ? { choferInfo: driverInfo } : {}),
+  };
+};
+
+const handleDniError = (error, res) => {
+  if (!(error instanceof DniProviderError)) return false;
+  res.status(error.status).json({
+    success: false,
+    ...(error.code ? { code: error.code } : {}),
+    message: error.message,
+  });
+  return true;
+};
+
 const registerPassenger = async (req, res, next) => {
   try {
-    const { email, password, nombres, apellidos, tipoDocumento, numeroDocumento, telefono, consentimientoDatos } = req.body;
+    const {
+      email,
+      password,
+      nombres,
+      apellidos,
+      tipoDocumento,
+      numeroDocumento,
+      telefono,
+      consentimientoDatos,
+      consentimientoConsultaDni,
+    } = req.body || {};
+    const normalizedEmail = normalizeEmail(email);
+    const dni = typeof numeroDocumento === 'string' ? numeroDocumento.trim() : '';
+    const submittedNames = typeof nombres === 'string' ? nombres.trim() : '';
+    const submittedSurnames = typeof apellidos === 'string' ? apellidos.trim() : '';
+    const phone = typeof telefono === 'string' ? telefono.trim() : '';
 
-    if (!email || !password || !nombres || !apellidos || !numeroDocumento) {
-      return res.status(400).json({
-        success: false,
-        message: 'Todos los campos obligatorios deben ser completados.',
-      });
+    if (!normalizedEmail || typeof password !== 'string' || !submittedNames || !submittedSurnames || !dni) {
+      return res.status(400).json({ success: false, message: 'Todos los campos obligatorios deben ser completados.' });
+    }
+    if (normalizedEmail.length > 150 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      return res.status(400).json({ success: false, message: 'Ingresa un correo electrónico válido.' });
+    }
+    if (password.length < 8) {
+      return res.status(400).json({ success: false, message: 'La contraseña debe tener al menos 8 caracteres.' });
+    }
+    if (String(tipoDocumento || 'DNI').toUpperCase() !== 'DNI' || !/^\d{8}$/.test(dni) ||
+        submittedNames.length > 100 || submittedSurnames.length > 100) {
+      return res.status(400).json({ success: false, message: 'Ingresa un DNI válido y nombres completos.' });
+    }
+    if (phone && (!/^\+?[0-9\s()-]{6,20}$/.test(phone) || phone.length > 20)) {
+      return res.status(400).json({ success: false, message: 'Ingresa un número de celular válido.' });
+    }
+    if (consentimientoDatos !== true || consentimientoConsultaDni !== true) {
+      return res.status(400).json({ success: false, message: 'Debes aceptar el tratamiento de datos y autorizar la consulta DNI.' });
     }
 
-    if (!consentimientoDatos) {
-      return res.status(400).json({
-        success: false,
-        message: 'Debe aceptar los términos de tratamiento de datos personales conforme a la Ley 29733.',
-      });
-    }
-
-    // Verificar si el correo ya existe
-    const existingUser = await db('usuarios')
-      .join('roles', 'usuarios.rol_id', 'roles.id')
-      .select('usuarios.*', 'roles.codigo as rol_codigo')
-      .where({ 'usuarios.email': email.toLowerCase().trim() })
-      .first();
-    if (existingUser) {
-      if (existingUser.rol_codigo === 'PASAJERO' && !existingUser.email_verificado) {
-        const existingProfile = await db('perfiles')
-          .where({ usuario_id: existingUser.id })
-          .first();
-        const sameDocument =
-          existingProfile?.numero_documento === numeroDocumento.trim();
-        const samePassword = sameDocument &&
-          await bcrypt.compare(password, existingUser.password_hash);
-
-        if (samePassword) {
+    const existing = await getUserByEmail(normalizedEmail);
+    if (existing) {
+      if (existing.rol_codigo === 'PASAJERO' && existing.email_verificado !== true) {
+        try {
+          await firebaseAuth.signInWithPassword(normalizedEmail, password);
           return res.status(201).json({
             success: true,
             message: 'Hay un registro pendiente. Continúa con la verificación.',
-            data: {
-              usuario: {
-                id: existingUser.id,
-                email: existingUser.email,
-                rol: 'PASAJERO',
-                emailVerificado: false,
-              },
-            },
+            data: { usuario: { id: existing.id, email: normalizedEmail, rol: 'PASAJERO', emailVerificado: false } },
+          });
+        } catch {
+          return res.status(409).json({
+            success: false,
+            message: 'El correo electrónico ya se encuentra registrado o los datos no coinciden.',
           });
         }
       }
+      return res.status(409).json({ success: false, message: 'El correo electrónico ya se encuentra registrado.' });
+    }
 
-      return res.status(409).json({
+    const identityHash = crypto.createHash('sha256').update(dni).digest('hex');
+    const existingIdentity = await db.collection('consultas_dni').doc(identityHash).get();
+    if (existingIdentity.exists && existingIdentity.data().usuario_id) {
+      return res.status(409).json({ success: false, message: 'Este DNI ya está registrado en SIT-PAY.' });
+    }
+
+    let identity;
+    try {
+      identity = await lookupIdentity(dni, {
+        nombres: submittedNames,
+        apellidos: submittedSurnames,
+      });
+    } catch (error) {
+      if (handleDniError(error, res)) return;
+      throw error;
+    }
+    if (!namesMatch(submittedNames, identity.nombres) ||
+        !namesMatch(submittedSurnames, identity.apellidos)) {
+      return res.status(400).json({
         success: false,
-        message: 'El correo electrónico ya se encuentra registrado o los datos no coinciden.',
+        message: 'Los nombres no coinciden con los datos devueltos por el proveedor de DNI.',
       });
     }
 
-    const saltRounds = 10;
-    const passwordHash = await bcrypt.hash(password, saltRounds);
-
-    // Rol de Pasajero (ID = 4)
-    const rolPasajero = await db('roles').where({ codigo: 'PASAJERO' }).first();
-    if (!rolPasajero) {
-      return res.status(500).json({ success: false, message: 'Rol PASAJERO no encontrado en base de datos.' });
-    }
-
-    // Transacción atómica: Usuario + Perfil
-    const result = await db.transaction(async (trx) => {
-      const [nuevoUsuario] = await trx('usuarios')
-        .insert({
-          email: email.toLowerCase().trim(),
-          password_hash: passwordHash,
-          rol_id: rolPasajero.id,
-          estado: 'ACTIVO',
-          email_verificado: false,
-        })
-        .returning('*');
-
-      await trx('perfiles').insert({
-        usuario_id: nuevoUsuario.id,
-        nombres: nombres.trim(),
-        apellidos: apellidos.trim(),
-        tipo_documento: tipoDocumento || 'DNI',
-        numero_documento: numeroDocumento.trim(),
-        telefono: telefono ? telefono.trim() : null,
-        consentimiento_datos: true,
-        fecha_consentimiento: new Date(),
-      });
-
-      return nuevoUsuario;
-    });
-
-    res.status(201).json({
-      success: true,
-      message: 'Registro creado. Completa la verificación facial y confirma tu correo para activar la cuenta.',
-      data: {
-        usuario: {
-          id: result.id,
-          email: result.email,
-          rol: 'PASAJERO',
-          emailVerificado: false,
+    const reservation = await reserveDni(dni);
+    let user;
+    try {
+      user = await createAccount({
+        email: normalizedEmail,
+        password,
+        role: 'PASAJERO',
+        emailVerified: false,
+        profile: {
+          nombres: identity.nombres,
+          apellidos: identity.apellidos,
+          tipo_documento: 'DNI',
+          numero_documento: dni,
+          telefono: phone || null,
+          consentimiento_datos: true,
+          fecha_consentimiento: new Date(),
+          consentimiento_consulta_dni: true,
+          fecha_consentimiento_consulta_dni: new Date(),
+          identidad: {
+            datos_proporcionados: { nombres: submittedNames, apellidos: submittedSurnames },
+            datos_proveedor: identity.record.datosProveedor,
+            fuente: identity.record.fuente,
+            estado_consulta: identity.record.estado,
+            verificacion_oficial: false,
+            consultado_at: identity.record.consultadoAt,
+          },
         },
+      });
+      await linkDniToUser({ ...reservation, uid: user.id });
+    } catch (error) {
+      if (user) await deleteUserAccount(user.id);
+      await releaseDniReservation(reservation);
+      throw error;
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: 'Registro creado. Confirma tu correo para activar la cuenta.',
+      data: { usuario: { id: user.id, email: user.email, rol: 'PASAJERO', emailVerificado: false } },
+    });
+  } catch (error) {
+    if (error.code === 'DNI_ALREADY_REGISTERED') {
+      return res.status(409).json({ success: false, message: 'Este DNI ya está registrado en SIT-PAY.' });
+    }
+    if (error.code === 'auth/email-already-exists' || error.code === 'EMAIL_ALREADY_REGISTERED') {
+      return res.status(409).json({ success: false, message: 'El correo electrónico ya se encuentra registrado.' });
+    }
+    next(error);
+  }
+};
+
+const login = async (req, res, next) => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    const password = req.body?.password;
+    if (!email || typeof password !== 'string' || !password) {
+      return res.status(400).json({ success: false, message: 'Debe ingresar correo y contraseña.' });
+    }
+
+    let tokenResult;
+    try {
+      tokenResult = await firebaseAuth.signInWithPassword(email, password);
+    } catch (error) {
+      if (error.firebaseCode === 'EMAIL_NOT_FOUND' || error.firebaseCode === 'INVALID_PASSWORD' ||
+          error.firebaseCode === 'INVALID_LOGIN_CREDENTIALS') {
+        return res.status(401).json({ success: false, message: 'Credenciales incorrectas.' });
+      }
+      throw error;
+    }
+
+    const userSnapshot = await db.collection(COLLECTION).doc(tokenResult.localId).get();
+    if (!userSnapshot.exists) {
+      return res.status(403).json({ success: false, message: 'La cuenta no tiene un perfil activo en SIT-PAY.' });
+    }
+    const user = { id: userSnapshot.id, ...userSnapshot.data() };
+    if (user.estado !== 'ACTIVO' || user.deleted_at) {
+      return res.status(403).json({ success: false, message: 'La cuenta se encuentra inactiva o suspendida.' });
+    }
+    if (user.email_verificado !== true || tokenResult.emailVerified !== true) {
+      return res.status(403).json({ success: false, message: 'Confirma tu correo electrónico para activar la cuenta.' });
+    }
+
+    await db.collection(COLLECTION).doc(user.id).update({ ultimo_login_at: new Date() });
+    return res.json({
+      success: true,
+      message: 'Inicio de sesión exitoso.',
+      data: {
+        usuario: await getSessionUser(user),
+        tokens: { accessToken: tokenResult.idToken, refreshToken: tokenResult.refreshToken },
       },
     });
   } catch (error) {
@@ -139,201 +395,63 @@ const registerPassenger = async (req, res, next) => {
   }
 };
 
-// 2. Login Unificado para todos los roles
-const login = async (req, res, next) => {
-  try {
-    const { email, password } = req.body;
-
-    if (!email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Debe ingresar correo y contraseña.',
-      });
-    }
-
-    const usuario = await db('usuarios')
-      .join('roles', 'usuarios.rol_id', 'roles.id')
-      .select('usuarios.*', 'roles.codigo as rol_codigo', 'roles.nombre as rol_nombre')
-      .where({ 'usuarios.email': email.toLowerCase().trim() })
-      .first();
-
-    if (!usuario) {
-      return res.status(401).json({
-        success: false,
-        message: 'Credenciales incorrectas.',
-      });
-    }
-
-    if (usuario.estado !== 'ACTIVO') {
-      return res.status(403).json({
-        success: false,
-        message: 'La cuenta se encuentra inactiva o suspendida. Contacte al administrador.',
-      });
-    }
-
-    const passwordValida = await bcrypt.compare(password, usuario.password_hash);
-    if (!passwordValida) {
-      return res.status(401).json({
-        success: false,
-        message: 'Credenciales incorrectas.',
-      });
-    }
-
-    if (!usuario.email_verificado) {
-      return res.status(403).json({
-        success: false,
-        message: 'Confirma tu correo electrónico para activar la cuenta.',
-      });
-    }
-
-    // Obtener perfil y datos adicionales según rol
-    const perfil = await db('perfiles').where({ usuario_id: usuario.id }).first();
-    let choferInfo = null;
-    let empresaInfo = null;
-
-    if (usuario.rol_codigo === 'CHOFER') {
-      choferInfo = await db('choferes')
-        .join('vehiculos', 'choferes.vehiculo_id', 'vehiculos.id')
-        .join('empresas', 'choferes.empresa_id', 'empresas.id')
-        .join('unidades_negocio', 'vehiculos.unidad_negocio_id', 'unidades_negocio.id')
-        .select(
-          'choferes.id as chofer_id',
-          'vehiculos.id as vehiculo_id',
-          'vehiculos.placa',
-          'vehiculos.qr_codigo_seguro',
-          'empresas.id as empresa_id',
-          'empresas.nombre_comercial as empresa_nombre',
-          'unidades_negocio.codigo as unidad_codigo',
-          'unidades_negocio.nombre as unidad_nombre'
-        )
-        .where({ 'choferes.usuario_id': usuario.id })
-        .first();
-    } else if (usuario.rol_codigo === 'ADMIN_EMPRESA') {
-      empresaInfo = await db('empresas')
-        .select('id', 'nombre_comercial', 'activo')
-        .where({ admin_usuario_id: usuario.id })
-        .first();
-    }
-
-    const tokens = generateTokens(usuario, usuario.rol_codigo);
-
-    // Actualizar último login y guardar hash del refresh token
-    const refreshHash = await bcrypt.hash(tokens.refreshToken, 8);
-    await db('usuarios')
-      .where({ id: usuario.id })
-      .update({
-        ultimo_login_at: new Date(),
-        refresh_token_hash: refreshHash,
-      });
-
-    res.json({
-      success: true,
-      message: 'Inicio de sesión exitoso.',
-      data: {
-        usuario: {
-          id: usuario.id,
-          email: usuario.email,
-          rol: usuario.rol_codigo,
-          rolNombre: usuario.rol_nombre,
-          nombres: perfil ? perfil.nombres : '',
-          apellidos: perfil ? perfil.apellidos : '',
-          fotoUrl: perfil ? perfil.foto_url : null,
-          empresaId: empresaInfo?.id || null,
-          empresaNombre: empresaInfo?.nombre_comercial || null,
-          empresaActiva: empresaInfo?.activo ?? null,
-          estado: usuario.estado,
-          emailVerificado: usuario.email_verificado,
-          choferInfo: choferInfo || undefined,
-        },
-        tokens,
-      },
-    });
-  } catch (error) {
-    next(error);
+const verifyGoogleCredential = async (credential) => {
+  const googleClientId = process.env.GOOGLE_CLIENT_ID;
+  if (!googleClientId) {
+    const error = new Error('El inicio con Google no está configurado en el servidor.');
+    error.statusCode = 503;
+    throw error;
   }
+  if (typeof credential !== 'string' || !credential) {
+    const error = new Error('No se recibió la credencial de Google.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const ticket = await googleOAuthClient.verifyIdToken({ idToken: credential, audience: googleClientId });
+  const account = ticket.getPayload();
+  if (!account?.email || account.email_verified !== true) {
+    const error = new Error('Google no pudo verificar el correo de esta cuenta.');
+    error.statusCode = 401;
+    throw error;
+  }
+  return account;
 };
 
 const loginWithGoogle = async (req, res, next) => {
   try {
-    const { credential } = req.body;
-    const googleClientId = process.env.GOOGLE_CLIENT_ID;
-    if (!googleClientId) {
-      return res.status(503).json({ success: false, message: 'El inicio con Google no está configurado en el servidor.' });
-    }
-    if (!credential) {
-      return res.status(400).json({ success: false, message: 'No se recibió la credencial de Google.' });
-    }
-
     let googleAccount;
     try {
-      const ticket = await googleOAuthClient.verifyIdToken({
-        idToken: credential,
-        audience: googleClientId,
-      });
-      googleAccount = ticket.getPayload();
+      googleAccount = await verifyGoogleCredential(req.body?.credential);
     } catch (error) {
-      return res.status(401).json({ success: false, message: 'La credencial de Google no es válida o expiró.' });
+      return res.status(error.statusCode || 401).json({ success: false, message: error.message });
     }
-
-    if (!googleAccount?.email || googleAccount.email_verified !== true) {
-      return res.status(401).json({ success: false, message: 'Google no pudo verificar el correo de esta cuenta.' });
-    }
-
-    const usuario = await db('usuarios')
-      .join('roles', 'usuarios.rol_id', 'roles.id')
-      .leftJoin('perfiles', 'usuarios.id', 'perfiles.usuario_id')
-      .leftJoin('empresas', 'empresas.admin_usuario_id', 'usuarios.id')
-      .select(
-        'usuarios.*',
-        'roles.codigo as rol_codigo',
-        'roles.nombre as rol_nombre',
-        'perfiles.nombres',
-        'perfiles.apellidos',
-        'perfiles.foto_url',
-        'empresas.id as empresa_id',
-        'empresas.nombre_comercial as empresa_nombre',
-        'empresas.activo as empresa_activa'
-      )
-      .where({ 'usuarios.email': googleAccount.email.toLowerCase() })
-      .whereNull('usuarios.deleted_at')
-      .first();
-
-    if (!usuario || !['ADMIN_EMPRESA', 'SUPER_ADMIN'].includes(usuario.rol_codigo)) {
+    const user = await getUserByEmail(googleAccount.email);
+    if (!user || !['ADMIN_EMPRESA', 'SUPER_ADMIN'].includes(user.rol_codigo)) {
       return res.status(403).json({
         success: false,
-        message: 'Esta cuenta Google no está vinculada a un usuario administrativo de SIT-Pay.',
+        message: 'Esta cuenta Google no está vinculada a un usuario administrativo de SIT-PAY.',
       });
     }
-    if (usuario.estado !== 'ACTIVO' || (usuario.rol_codigo === 'ADMIN_EMPRESA' && !usuario.empresa_activa)) {
+    if (user.estado !== 'ACTIVO' || user.deleted_at) {
       return res.status(403).json({ success: false, message: 'La cuenta administrativa está inactiva.' });
     }
-
-    const tokens = generateTokens(usuario, usuario.rol_codigo);
-    const refreshHash = await bcrypt.hash(tokens.refreshToken, 8);
-    await db('usuarios').where({ id: usuario.id }).update({
+    await auth.updateUser(user.id, { emailVerified: true });
+    await db.collection(COLLECTION).doc(user.id).set({
+      google_subject: googleAccount.sub,
+      email_verificado: true,
       ultimo_login_at: new Date(),
-      refresh_token_hash: refreshHash,
-    });
-
-    res.json({
+      updated_at: new Date(),
+    }, { merge: true });
+    return res.json({
       success: true,
       message: 'Inicio de sesión con Google exitoso.',
       data: {
-        usuario: {
-          id: usuario.id,
-          email: usuario.email,
-          rol: usuario.rol_codigo,
-          rolNombre: usuario.rol_nombre,
-          nombres: usuario.nombres || '',
-          apellidos: usuario.apellidos || '',
-          fotoUrl: usuario.foto_url || googleAccount.picture || null,
-          empresaId: usuario.empresa_id || null,
-          empresaNombre: usuario.empresa_nombre || null,
-          empresaActiva: usuario.empresa_activa ?? null,
-          estado: usuario.estado,
-          emailVerificado: usuario.email_verificado,
-        },
-        tokens,
+        usuario: await getSessionUser({
+          ...user,
+          google_subject: googleAccount.sub,
+          email_verificado: true,
+        }, googleAccount.picture),
+        tokens: await issueSession(user.id),
       },
     });
   } catch (error) {
@@ -341,124 +459,216 @@ const loginWithGoogle = async (req, res, next) => {
   }
 };
 
-// 3. Refresh Token
-const refreshToken = async (req, res, next) => {
+const googlePassengerAuth = async (req, res, next) => {
   try {
-    const { refreshToken } = req.body;
-
-    if (!refreshToken) {
-      return res.status(400).json({ success: false, message: 'Refresh token requerido.' });
+    let googleAccount;
+    try {
+      googleAccount = await verifyGoogleCredential(req.body?.credential);
+    } catch (error) {
+      return res.status(error.statusCode || 401).json({ success: false, message: error.message });
+    }
+    const email = normalizeEmail(googleAccount.email);
+    const existing = await getUserByEmail(email);
+    if (existing) {
+      if (existing.rol_codigo !== 'PASAJERO' || existing.estado !== 'ACTIVO' || existing.deleted_at) {
+        return res.status(403).json({ success: false, message: 'Esta cuenta Google no puede iniciar sesión como pasajero.' });
+      }
+      if (existing.email_verificado !== true) {
+        return res.status(403).json({ success: false, message: 'La cuenta requiere confirmar el correo electrónico.' });
+      }
+      await auth.updateUser(existing.id, { emailVerified: true });
+      const update = { google_subject: googleAccount.sub, ultimo_login_at: new Date(), updated_at: new Date() };
+      const profile = await getProfile(existing.id);
+      if (!profile?.foto_url && googleAccount.picture) {
+        await db.collection(PROFILES).doc(existing.id).set({ foto_url: googleAccount.picture }, { merge: true });
+      }
+      await db.collection(COLLECTION).doc(existing.id).set(update, { merge: true });
+      return res.json({
+        success: true,
+        message: 'Inicio de sesión con Google exitoso.',
+        data: {
+          usuario: await getSessionUser({ ...existing, ...update }, googleAccount.picture),
+          tokens: await issueSession(existing.id),
+        },
+      });
     }
 
-    const decoded = jwt.verify(refreshToken, jwtConfig.refreshSecret);
-    const usuario = await db('usuarios')
-      .join('roles', 'usuarios.rol_id', 'roles.id')
-      .select('usuarios.*', 'roles.codigo as rol_codigo')
-      .where({ 'usuarios.id': decoded.id })
-      .first();
-
-    if (!usuario || !usuario.refresh_token_hash) {
-      return res.status(401).json({ success: false, message: 'Sesión no válida o revocada.' });
+    const {
+      numeroDocumento,
+      nombres,
+      apellidos,
+      telefono,
+      consentimientoDatos,
+      consentimientoConsultaDni,
+    } = req.body;
+    if (!numeroDocumento && !nombres && !apellidos && !telefono &&
+        consentimientoDatos === undefined && consentimientoConsultaDni === undefined) {
+      return res.json({
+        success: true,
+        data: { registrationRequired: true, email, nombres: googleAccount.given_name || '', apellidos: googleAccount.family_name || '' },
+      });
+    }
+    const dni = typeof numeroDocumento === 'string' ? numeroDocumento.trim() : '';
+    const submittedNames = typeof nombres === 'string' ? nombres.trim() : '';
+    const submittedSurnames = typeof apellidos === 'string' ? apellidos.trim() : '';
+    const phone = typeof telefono === 'string' ? telefono.trim() : '';
+    if (!/^\d{8}$/.test(dni)) {
+      return res.status(400).json({ success: false, message: 'Ingresa un DNI válido de 8 dígitos.' });
+    }
+    if (consentimientoDatos !== true || consentimientoConsultaDni !== true) {
+      return res.status(400).json({ success: false, message: 'Debes aceptar el tratamiento de datos y autorizar la consulta DNI.' });
+    }
+    if (phone && !/^\+?[0-9\s()-]{6,20}$/.test(phone)) {
+      return res.status(400).json({ success: false, message: 'Ingresa un número de celular válido.' });
     }
 
-    const match = await bcrypt.compare(refreshToken, usuario.refresh_token_hash);
-    if (!match) {
-      return res.status(401).json({ success: false, message: 'Refresh token revocado o modificado.' });
+    const identityHash = crypto.createHash('sha256').update(dni).digest('hex');
+    const existingIdentity = await db.collection('consultas_dni').doc(identityHash).get();
+    if (existingIdentity.exists && existingIdentity.data().usuario_id) {
+      return res.status(409).json({ success: false, message: 'Este DNI ya está registrado en SIT-PAY.' });
+    }
+    let identity;
+    try {
+      identity = await lookupIdentity(dni, { nombres: submittedNames, apellidos: submittedSurnames });
+    } catch (error) {
+      if (handleDniError(error, res)) return;
+      throw error;
+    }
+    if (!namesMatch(submittedNames, identity.nombres) ||
+        !namesMatch(submittedSurnames, identity.apellidos)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Los nombres no coinciden con los datos devueltos por el proveedor de DNI.',
+      });
+    }
+    const reservation = await reserveDni(dni);
+    let user;
+    try {
+      user = await createAccount({
+        email,
+        role: 'PASAJERO',
+        emailVerified: true,
+        googleSubject: googleAccount.sub,
+        profile: {
+          nombres: identity.nombres,
+          apellidos: identity.apellidos,
+          tipo_documento: 'DNI',
+          numero_documento: dni,
+          telefono: phone || null,
+          foto_url: googleAccount.picture || null,
+          consentimiento_datos: true,
+          fecha_consentimiento: new Date(),
+          consentimiento_consulta_dni: true,
+          fecha_consentimiento_consulta_dni: new Date(),
+          identidad: {
+            datos_proporcionados: { nombres: submittedNames, apellidos: submittedSurnames },
+            datos_proveedor: identity.record.datosProveedor,
+            fuente: identity.record.fuente,
+            estado_consulta: identity.record.estado,
+            verificacion_oficial: false,
+            consultado_at: identity.record.consultadoAt,
+          },
+        },
+      });
+      await linkDniToUser({ ...reservation, uid: user.id });
+    } catch (error) {
+      if (user) await deleteUserAccount(user.id);
+      await releaseDniReservation(reservation);
+      throw error;
     }
 
-    const newTokens = generateTokens(usuario, usuario.rol_codigo);
-    const newRefreshHash = await bcrypt.hash(newTokens.refreshToken, 8);
-    await db('usuarios').where({ id: usuario.id }).update({ refresh_token_hash: newRefreshHash });
-
-    res.json({
+    return res.status(201).json({
       success: true,
-      message: 'Token renovado con éxito.',
-      data: { tokens: newTokens },
+      message: 'Cuenta de pasajero creada con Google.',
+      data: {
+        usuario: await getSessionUser(user, googleAccount.picture),
+        tokens: await issueSession(user.id),
+      },
     });
   } catch (error) {
+    if (error.code === 'DNI_ALREADY_REGISTERED') {
+      return res.status(409).json({ success: false, message: 'Este DNI ya está registrado en SIT-PAY.' });
+    }
+    if (error.code === 'auth/email-already-exists' || error.code === 'EMAIL_ALREADY_REGISTERED') {
+      return res.status(409).json({ success: false, message: 'El correo electrónico ya se encuentra registrado.' });
+    }
+    next(error);
+  }
+};
+
+const refreshToken = async (req, res) => {
+  const refreshTokenValue = req.body?.refreshToken;
+  if (typeof refreshTokenValue !== 'string' || !refreshTokenValue) {
+    return res.status(400).json({ success: false, message: 'Refresh token requerido.' });
+  }
+  try {
+    const tokens = await firebaseAuth.refreshIdToken(refreshTokenValue);
+    return res.json({
+      success: true,
+      message: 'Token renovado con éxito.',
+      data: { tokens: { accessToken: tokens.id_token, refreshToken: tokens.refresh_token } },
+    });
+  } catch (error) {
+    if (error.statusCode === 503) {
+      return res.status(503).json({ success: false, message: error.message });
+    }
     return res.status(401).json({ success: false, message: 'Refresh token inválido o expirado.' });
   }
 };
 
-// 4. Logout
 const logout = async (req, res, next) => {
   try {
-    if (req.user && req.user.id) {
-      await db('usuarios')
-        .where({ id: req.user.id })
-        .update({ refresh_token_hash: null });
-    }
-
-    res.json({
-      success: true,
-      message: 'Sesión cerrada correctamente.',
-    });
+    await auth.revokeRefreshTokens(req.user.id);
+    return res.json({ success: true, message: 'Sesión cerrada correctamente.' });
   } catch (error) {
     next(error);
   }
 };
 
-// 5. Enviar código de confirmación de correo para el registro
 const requestRegistrationEmailCode = async (req, res, next) => {
   try {
-    const email = String(req.body.email || '').trim().toLowerCase();
+    const email = normalizeEmail(req.body?.email);
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Ingresa un correo electrónico válido.',
-      });
+      return res.status(400).json({ success: false, message: 'Ingresa un correo electrónico válido.' });
     }
-
-    const usuario = await db('usuarios')
-      .join('roles', 'usuarios.rol_id', 'roles.id')
-      .select('usuarios.*', 'roles.codigo as rol_codigo')
-      .where({ 'usuarios.email': email })
-      .first();
-    if (!usuario || usuario.rol_codigo !== 'PASAJERO' || usuario.email_verificado) {
-      return res.status(400).json({
-        success: false,
-        message: 'No hay una cuenta pendiente de confirmación para este correo.',
-      });
+    const user = await getUserByEmail(email);
+    if (!user || user.rol_codigo !== 'PASAJERO' || user.email_verificado === true) {
+      return res.status(400).json({ success: false, message: 'No hay una cuenta pendiente de confirmación para este correo.' });
     }
-
     const now = new Date();
-    const sentAt = usuario.email_verification_sent_at
-      ? new Date(usuario.email_verification_sent_at)
-      : null;
-    const secondsSinceLastSend = sentAt
-      ? Math.floor((now.getTime() - sentAt.getTime()) / 1000)
-      : 60;
-    if (secondsSinceLastSend < 60) {
+    const sentAt = user.email_verification_sent_at?.toDate
+      ? user.email_verification_sent_at.toDate()
+      : user.email_verification_sent_at
+        ? new Date(user.email_verification_sent_at)
+        : null;
+    const elapsed = sentAt ? Math.floor((now.getTime() - sentAt.getTime()) / 1000) : 60;
+    if (elapsed < 60) {
       return res.status(429).json({
         success: false,
         message: 'Espera antes de solicitar otro código.',
-        retryAfterSeconds: 60 - secondsSinceLastSend,
+        retryAfterSeconds: 60 - elapsed,
       });
     }
-
     const code = crypto.randomInt(100000, 1000000).toString();
     const codeHash = crypto.createHash('sha256').update(code).digest('hex');
-    await db('usuarios').where({ id: usuario.id }).update({
+    await db.collection(COLLECTION).doc(user.id).update({
       email_verification_code_hash: codeHash,
       email_verification_expires_at: new Date(now.getTime() + 5 * 60 * 1000),
       email_verification_sent_at: now,
       email_verification_attempts: 0,
+      updated_at: now,
     });
-
     try {
-      await sendRegistrationVerificationCode({ to: usuario.email, code });
+      await sendRegistrationVerificationCode({ to: email, code });
     } catch (error) {
-      await db('usuarios')
-        .where({ id: usuario.id, email_verification_code_hash: codeHash })
-        .update({
-          email_verification_code_hash: null,
-          email_verification_expires_at: null,
-          email_verification_sent_at: null,
-          email_verification_attempts: 0,
-        });
+      await db.collection(COLLECTION).doc(user.id).update({
+        email_verification_code_hash: FieldValue.delete(),
+        email_verification_expires_at: FieldValue.delete(),
+        email_verification_sent_at: FieldValue.delete(),
+        email_verification_attempts: 0,
+      });
       throw error;
     }
-
     return res.json({
       success: true,
       message: 'Código de verificación enviado al correo.',
@@ -469,226 +679,135 @@ const requestRegistrationEmailCode = async (req, res, next) => {
   }
 };
 
-// 6. Validar código y activar el registro
 const verifyRegistrationEmailCode = async (req, res, next) => {
   try {
-    const email = String(req.body.email || '').trim().toLowerCase();
-    const code = String(req.body.code || '').trim();
+    const email = normalizeEmail(req.body?.email);
+    const code = String(req.body?.code || '').trim();
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !/^\d{6}$/.test(code)) {
-      return res.status(400).json({
+      return res.status(400).json({ success: false, message: 'Ingresa un correo válido y el código de 6 dígitos.' });
+    }
+    const user = await getUserByEmail(email);
+    if (!user || user.rol_codigo !== 'PASAJERO' || user.email_verificado === true) {
+      return res.status(400).json({ success: false, message: 'No hay una cuenta pendiente de confirmación para este correo.' });
+    }
+    if ((user.email_verification_attempts || 0) >= 5) {
+      return res.status(429).json({ success: false, message: 'Se agotaron los intentos. Solicita un nuevo código.' });
+    }
+    const expiresAt = user.email_verification_expires_at?.toDate
+      ? user.email_verification_expires_at.toDate()
+      : new Date(user.email_verification_expires_at || 0);
+    if (!user.email_verification_code_hash || expiresAt.getTime() <= Date.now()) {
+      return res.status(400).json({ success: false, message: 'El código expiró. Solicita uno nuevo.' });
+    }
+    const expectedHash = Buffer.from(user.email_verification_code_hash, 'hex');
+    const submittedHash = Buffer.from(crypto.createHash('sha256').update(code).digest('hex'), 'hex');
+    if (expectedHash.length !== submittedHash.length || !crypto.timingSafeEqual(expectedHash, submittedHash)) {
+      const attempts = (user.email_verification_attempts || 0) + 1;
+      await db.collection(COLLECTION).doc(user.id).update({ email_verification_attempts: attempts });
+      return res.status(attempts >= 5 ? 429 : 400).json({
         success: false,
-        message: 'Ingresa un correo válido y el código de 6 dígitos.',
+        message: attempts >= 5
+          ? 'Se agotaron los intentos. Solicita un nuevo código.'
+          : `El código no es correcto. Intentos restantes: ${5 - attempts}.`,
       });
     }
 
-    const result = await db.transaction(async (trx) => {
-      const usuario = await trx('usuarios')
-        .join('roles', 'usuarios.rol_id', 'roles.id')
-        .select('usuarios.*', 'roles.codigo as rol_codigo')
-        .where({ 'usuarios.email': email })
-        .forUpdate('usuarios')
-        .first();
-
-      if (!usuario || usuario.rol_codigo !== 'PASAJERO' || usuario.email_verificado) {
-        return {
-          status: 400,
-          message: 'No hay una cuenta pendiente de confirmación para este correo.',
-        };
-      }
-
-      if (usuario.email_verification_attempts >= 5) {
-        return {
-          status: 429,
-          message: 'Se agotaron los intentos. Solicita un nuevo código.',
-        };
-      }
-
-      const expiresAt = usuario.email_verification_expires_at
-        ? new Date(usuario.email_verification_expires_at)
-        : null;
-      if (
-        !usuario.email_verification_code_hash ||
-        !expiresAt ||
-        expiresAt.getTime() <= Date.now()
-      ) {
-        return {
-          status: 400,
-          message: 'El código expiró. Solicita uno nuevo.',
-        };
-      }
-
-      const expectedHash = Buffer.from(usuario.email_verification_code_hash, 'hex');
-      const submittedHash = Buffer.from(
-        crypto.createHash('sha256').update(code).digest('hex'),
-        'hex'
-      );
-      if (
-        expectedHash.length !== submittedHash.length ||
-        !crypto.timingSafeEqual(expectedHash, submittedHash)
-      ) {
-        const attempts = usuario.email_verification_attempts + 1;
-        await trx('usuarios').where({ id: usuario.id }).update({
-          email_verification_attempts: attempts,
-        });
-        return {
-          status: attempts >= 5 ? 429 : 400,
-          message: attempts >= 5
-            ? 'Se agotaron los intentos. Solicita un nuevo código.'
-            : `El código no es correcto. Intentos restantes: ${5 - attempts}.`,
-        };
-      }
-
-      const perfil = await trx('perfiles').where({ usuario_id: usuario.id }).first();
-      const tokens = generateTokens(usuario, 'PASAJERO');
-      const refreshHash = await bcrypt.hash(tokens.refreshToken, 8);
-      await trx('usuarios').where({ id: usuario.id }).update({
-        email_verificado: true,
-        email_verification_code_hash: null,
-        email_verification_expires_at: null,
-        email_verification_sent_at: null,
-        email_verification_attempts: 0,
-        ultimo_login_at: new Date(),
-        refresh_token_hash: refreshHash,
-        updated_at: new Date(),
-      });
-
-      return {
-        status: 200,
-        tokens,
-        usuario: {
-          id: usuario.id,
-          email: usuario.email,
-          rol: usuario.rol_codigo,
-          nombres: perfil?.nombres || '',
-          apellidos: perfil?.apellidos || '',
-          fotoUrl: perfil?.foto_url || null,
-          emailVerificado: true,
-        },
-      };
+    await auth.updateUser(user.id, { emailVerified: true });
+    await db.collection(COLLECTION).doc(user.id).update({
+      email_verificado: true,
+      email_verification_code_hash: FieldValue.delete(),
+      email_verification_expires_at: FieldValue.delete(),
+      email_verification_sent_at: FieldValue.delete(),
+      email_verification_attempts: 0,
+      ultimo_login_at: new Date(),
+      updated_at: new Date(),
     });
-
-    if (result.status !== 200) {
-      return res.status(result.status).json({
-        success: false,
-        message: result.message,
-      });
-    }
-
+    const updatedUser = { ...user, email_verificado: true };
     return res.json({
       success: true,
       message: 'Correo confirmado. Tu cuenta está activa.',
-      data: { usuario: result.usuario, tokens: result.tokens },
+      data: {
+        usuario: await getSessionUser(updatedUser),
+        tokens: await issueSession(user.id),
+      },
     });
   } catch (error) {
     return next(error);
   }
 };
 
-// 5. Recuperación de contraseña por código de correo
 const forgotPassword = async (req, res, next) => {
   try {
-    const { email } = req.body;
-    if (!email) {
-      return res.status(400).json({ success: false, message: 'Ingrese su correo electrónico.' });
-    }
+    const email = normalizeEmail(req.body?.email);
+    if (!email) return res.status(400).json({ success: false, message: 'Ingrese su correo electrónico.' });
+    const user = await getUserByEmail(email);
+    const genericMessage = 'Si el correo está registrado, se enviaron las instrucciones de recuperación.';
+    if (!user) return res.json({ success: true, message: genericMessage });
 
-    const usuario = await db('usuarios').where({ email: email.toLowerCase().trim() }).first();
-    // Por seguridad, siempre responder con mensaje genérico para no filtrar existencia de emails
-    if (!usuario) {
-      return res.json({
-        success: true,
-        message: 'Si el correo está registrado, se enviaron las instrucciones de recuperación.',
-      });
-    }
-
-    const tokenRecuperacion = crypto.randomInt(100000, 1000000).toString();
-    const tokenHash = crypto.createHash('sha256').update(tokenRecuperacion).digest('hex');
-    const expira = new Date(Date.now() + 15 * 60 * 1000);
-
-    await db('usuarios')
-      .where({ id: usuario.id })
-      .update({
-        token_recuperacion: tokenHash,
-        expiracion_recuperacion: expira,
-      });
-
+    const code = crypto.randomInt(100000, 1000000).toString();
+    const codeHash = crypto.createHash('sha256').update(code).digest('hex');
+    await db.collection(COLLECTION).doc(user.id).update({
+      token_recuperacion: codeHash,
+      expiracion_recuperacion: new Date(Date.now() + 15 * 60 * 1000),
+      updated_at: new Date(),
+    });
     try {
-      await sendPasswordResetCode({ to: usuario.email, code: tokenRecuperacion });
+      await sendPasswordResetCode({ to: email, code });
     } catch (error) {
-      await db('usuarios')
-        .where({ id: usuario.id, token_recuperacion: tokenHash })
-        .update({ token_recuperacion: null, expiracion_recuperacion: null });
+      await db.collection(COLLECTION).doc(user.id).update({
+        token_recuperacion: FieldValue.delete(),
+        expiracion_recuperacion: FieldValue.delete(),
+      });
       throw error;
     }
-
-    res.json({
-      success: true,
-      message: 'Si el correo está registrado, se enviaron las instrucciones de recuperación.',
-    });
+    return res.json({ success: true, message: genericMessage });
   } catch (error) {
     next(error);
   }
 };
 
-// 6. Reset Password con token/código
 const resetPassword = async (req, res, next) => {
   try {
-    const { email, token, newPassword } = req.body;
-
-    if (!email || !token || !newPassword) {
+    const email = normalizeEmail(req.body?.email);
+    const token = String(req.body?.token || '');
+    const newPassword = req.body?.newPassword;
+    if (!email || !token || typeof newPassword !== 'string') {
       return res.status(400).json({ success: false, message: 'Todos los campos son requeridos.' });
     }
-
-    if (!/^\d{6}$/.test(String(token)) || String(newPassword).length < 8) {
-      return res.status(400).json({
-        success: false,
-        message: 'El código debe tener 6 dígitos y la contraseña nueva al menos 8 caracteres.',
-      });
+    if (!/^\d{6}$/.test(token) || newPassword.length < 8) {
+      return res.status(400).json({ success: false, message: 'El código debe tener 6 dígitos y la contraseña nueva al menos 8 caracteres.' });
+    }
+    const user = await getUserByEmail(email);
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const expiration = user?.expiracion_recuperacion?.toDate
+      ? user.expiracion_recuperacion.toDate()
+      : new Date(user?.expiracion_recuperacion || 0);
+    if (!user || user.token_recuperacion !== tokenHash || expiration.getTime() <= Date.now()) {
+      return res.status(400).json({ success: false, message: 'Código de recuperación inválido o expirado.' });
     }
 
-    const tokenHash = crypto.createHash('sha256').update(String(token)).digest('hex');
-    const usuario = await db('usuarios')
-      .where({
-        email: email.toLowerCase().trim(),
-        token_recuperacion: tokenHash,
-      })
-      .andWhere('expiracion_recuperacion', '>', new Date())
-      .first();
-
-    if (!usuario) {
-      return res.status(400).json({
-        success: false,
-        message: 'Código de recuperación inválido o expirado.',
-      });
-    }
-
-    const passwordHash = await bcrypt.hash(newPassword, 10);
-    await db('usuarios')
-      .where({ id: usuario.id })
-      .update({
-        password_hash: passwordHash,
-        token_recuperacion: null,
-        expiracion_recuperacion: null,
-        refresh_token_hash: null, // Forzar re-login en todos los dispositivos
-      });
-
-    res.json({
-      success: true,
-      message: 'Contraseña actualizada con éxito. Puede iniciar sesión.',
+    await auth.updateUser(user.id, { password: newPassword });
+    await auth.revokeRefreshTokens(user.id);
+    await db.collection(COLLECTION).doc(user.id).update({
+      token_recuperacion: FieldValue.delete(),
+      expiracion_recuperacion: FieldValue.delete(),
+      updated_at: new Date(),
     });
+    return res.json({ success: true, message: 'Contraseña restablecida exitosamente.' });
   } catch (error) {
     next(error);
   }
 };
 
 module.exports = {
-  registerPassenger,
+  forgotPassword,
+  googlePassengerAuth,
   login,
   loginWithGoogle,
-  refreshToken,
   logout,
-  forgotPassword,
-  resetPassword,
+  refreshToken,
+  registerPassenger,
   requestRegistrationEmailCode,
+  resetPassword,
   verifyRegistrationEmailCode,
 };

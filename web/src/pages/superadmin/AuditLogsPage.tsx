@@ -5,18 +5,29 @@ import { api } from '../../services/api';
 export const AuditLogsPage: React.FC = () => {
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hasMore, setHasMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    fetchLogs();
+    void fetchLogs(1, false);
   }, []);
 
-  const fetchLogs = async () => {
+  const fetchLogs = async (nextPage: number, append: boolean) => {
+    setLoading(true);
+    setError('');
     try {
-      const res = await api.get('/admin/audit-logs');
+      const res = await api.get('/admin/audit-logs', {
+        params: { page: nextPage, limit: 50 },
+      });
       if (res.data.success) {
-        setLogs(res.data.data);
+        setLogs((current) => append ? [...current, ...res.data.data] : res.data.data);
+        setHasMore(Boolean(res.data.pagination?.hasMore));
+        setPage(nextPage);
       }
-    } catch (_) {} finally {
+    } catch (requestError: any) {
+      setError(requestError.response?.data?.message || 'No se pudo cargar el registro de auditoría.');
+    } finally {
       setLoading(false);
     }
   };
@@ -32,6 +43,11 @@ export const AuditLogsPage: React.FC = () => {
         </p>
       </div>
 
+      {error && (
+        <div role="alert" className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-300">
+          {error}
+        </div>
+      )}
       <div className="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-xs text-left">
@@ -60,6 +76,16 @@ export const AuditLogsPage: React.FC = () => {
           </table>
         </div>
       </div>
+      {hasMore && (
+        <button
+          type="button"
+          disabled={loading}
+          onClick={() => void fetchLogs(page + 1, true)}
+          className="rounded-xl border border-slate-700 px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+        >
+          {loading ? 'Cargando...' : 'Cargar más registros'}
+        </button>
+      )}
     </div>
   );
 };

@@ -4,13 +4,14 @@
 const express = require('express');
 const router = express.Router();
 const companyController = require('./company.controller');
-const authenticateJWT = require('../../middlewares/auth');
+const authenticateFirebaseToken = require('../../middlewares/auth');
 const authorizeRoles = require('../../middlewares/rbac');
 
-router.use(authenticateJWT);
+router.use(authenticateFirebaseToken);
 router.use(authorizeRoles('ADMIN_EMPRESA', 'SUPER_ADMIN'));
 
 router.get('/dashboard', companyController.getCompanyDashboard);
+router.get('/business-units', companyController.getBusinessUnits);
 router.post('/drivers', companyController.createDriver);
 router.get('/export-csv', companyController.exportReportCSV);
 

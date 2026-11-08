@@ -1,15 +1,6 @@
-/**
- * Motor de Tarifas Dinámicas - Cumplimiento Ley 26271
- *
- * Reglas de la Ley 26271 (Pasaje Universitario y Escolar):
- * - La tarifa universitaria acreditada es el 50% de la tarifa normal (configurable en BD).
- * - Se aplica de 05:00 a 24:00 horas en días laborables (Lunes a Sábado).
- * - Requiere validación previa y acreditación con estado APROBADA y vigencia no expirada.
- * - Fuera de dicho horario, días no laborables o sin acreditación aprobada, se cobra tarifa NORMAL.
- */
-const db = require('../config/db');
+const { listCollection, queryCollection, timestampToDate } = require('./firestoreData');
 
-const DIAS_MAP = {
+const DAYS = {
   0: 'DOMINGO',
   1: 'LUNES',
   2: 'MARTES',
@@ -19,107 +10,94 @@ const DIAS_MAP = {
   6: 'SABADO',
 };
 
-/**
- * Calcula la tarifa aplicable a un pasajero en el momento actual o fecha dada
- * @param {string} pasajeroId - UUID del pasajero
- * @param {Date} [customDate] - Fecha de evaluación (por defecto Date.now())
- * @returns {Promise<Object>}
- */
-const calculateApplicableFare = async (pasajeroId, customDate = new Date()) => {
+const newestFirst = (left, right) => {
+  const leftDate = timestampToDate(left.created_at)?.getTime() || 0;
+  const rightDate = timestampToDate(right.created_at)?.getTime() || 0;
+  return rightDate - leftDate;
+};
+
+const isFareCurrent = (fare, today) => {
+  const startsAt = timestampToDate(fare.vigencia_inicio)?.toISOString().slice(0, 10) ||
+    String(fare.vigencia_inicio || '').slice(0, 10);
+  const endsAt = timestampToDate(fare.vigencia_fin)?.toISOString().slice(0, 10) ||
+    String(fare.vigencia_fin || '').slice(0, 10);
+  return (!startsAt || startsAt <= today) && (!endsAt || endsAt >= today);
+};
+
+const calculateApplicableFare = async (passengerId, customDate = new Date()) => {
   const now = customDate instanceof Date ? customDate : new Date(customDate);
-  const diaSemana = DIAS_MAP[now.getDay()];
-  const horaActualStr = now.toTimeString().split(' ')[0]; // 'HH:MM:SS'
-  const fechaHoyStr = now.toISOString().split('T')[0]; // 'YYYY-MM-DD'
+  if (Number.isNaN(now.getTime())) throw new Error('La fecha de cálculo de tarifa no es válida.');
+  const today = now.toISOString().slice(0, 10);
+  const activeFares = (await queryCollection('tarifas', 'activo', '==', true))
+    .filter((fare) => isFareCurrent(fare, today))
+    .sort(newestFirst);
+  const normalFare = activeFares.find((fare) => fare.tipo_pasajero === 'NORMAL');
+  if (!normalFare) throw new Error('No se encontró una tarifa normal configurada en el sistema.');
 
-  // 1. Obtener la tarifa normal vigente como base
-  const tarifaNormal = await db('tarifas')
-    .where({ tipo_pasajero: 'NORMAL', activo: true })
-    .orderBy('id', 'desc')
-    .first();
-
-  if (!tarifaNormal) {
-    throw new Error('No se encontró una tarifa normal configurada en el sistema.');
-  }
-
-  // 2. Verificar si el pasajero tiene una acreditación preferencial APROBADA y VIGENTE
-  const acreditacion = await db('solicitudes_preferenciales')
-    .where({
-      usuario_id: pasajeroId,
-      estado: 'APROBADA',
-    })
-    .where((builder) => {
-      builder.whereNull('fecha_vencimiento').orWhere('fecha_vencimiento', '>=', fechaHoyStr);
-    })
-    .orderBy('created_at', 'desc')
-    .first();
-
-  // Si no cuenta con acreditación aprobada, se aplica la tarifa regular
-  if (!acreditacion) {
+  const preferences = (await queryCollection('solicitudes_preferenciales', 'usuario_id', '==', passengerId))
+    .filter((request) => request.estado === 'APROBADA')
+    .filter((request) => !request.fecha_vencimiento || request.fecha_vencimiento >= today)
+    .sort(newestFirst);
+  const accreditation = preferences[0];
+  if (!accreditation) {
     return {
-      tarifaId: tarifaNormal.id,
+      tarifaId: normalFare.id,
       tipoPasajero: 'NORMAL',
       tipoTarifaAplicada: 'NORMAL',
-      monto: parseFloat(tarifaNormal.monto),
+      monto: Number(normalFare.monto),
       descuento: 0,
       motivo: 'Sin acreditación universitaria activa (Tarifa normal)',
       esMedioPasaje: false,
     };
   }
 
-  // 3. Evaluar horario y día de la Ley 26271 para la tarifa preferencial correspondiente
-  const tarifaPreferencial = await db('tarifas')
-    .where({ tipo_pasajero: 'UNIVERSITARIA', activo: true })
-    .orderBy('id', 'desc')
-    .first();
-
-  if (!tarifaPreferencial) {
+  const universityFare = activeFares.find((fare) => fare.tipo_pasajero === 'UNIVERSITARIA');
+  if (!universityFare) {
     return {
-      tarifaId: tarifaNormal.id,
+      tarifaId: normalFare.id,
       tipoPasajero: 'UNIVERSITARIA',
       tipoTarifaAplicada: 'NORMAL',
-      monto: parseFloat(tarifaNormal.monto),
+      monto: Number(normalFare.monto),
       descuento: 0,
       motivo: 'Tarifa universitaria no disponible en el sistema',
       esMedioPasaje: false,
     };
   }
 
-  // Verificar días aplicables
-  const diasAplicables = typeof tarifaPreferencial.dias_semana_aplicables === 'string'
-    ? JSON.parse(tarifaPreferencial.dias_semana_aplicables)
-    : tarifaPreferencial.dias_semana_aplicables;
-
-  const esDiaValido = Array.isArray(diasAplicables) && diasAplicables.includes(diaSemana);
-
-  // Verificar rango de hora reglamentario (05:00 a 24:00)
-  const esHoraValida =
-    horaActualStr >= tarifaPreferencial.hora_inicio &&
-    horaActualStr <= tarifaPreferencial.hora_fin;
-
-  if (esDiaValido && esHoraValida) {
+  let applicableDays = universityFare.dias_semana_aplicables;
+  if (typeof applicableDays === 'string') {
+    try {
+      applicableDays = JSON.parse(applicableDays);
+    } catch (error) {
+      throw new Error('La configuración de días de la tarifa universitaria no es válida.', { cause: error });
+    }
+  }
+  const day = DAYS[now.getDay()];
+  const time = now.toTimeString().split(' ')[0];
+  const validDay = Array.isArray(applicableDays) && applicableDays.includes(day);
+  const validTime = time >= universityFare.hora_inicio && time <= universityFare.hora_fin;
+  if (validDay && validTime) {
     return {
-      tarifaId: tarifaPreferencial.id,
+      tarifaId: universityFare.id,
       tipoPasajero: 'UNIVERSITARIA',
       tipoTarifaAplicada: 'UNIVERSITARIA',
-      monto: parseFloat(tarifaPreferencial.monto),
-      descuento: parseFloat(tarifaPreferencial.porcentaje_descuento),
-      motivo: `Beneficio Ley 26271 aplicado (50% de descuento en horario 05:00 a 24:00)`,
+      monto: Number(universityFare.monto),
+      descuento: Number(universityFare.porcentaje_descuento || 0),
+      motivo: 'Beneficio Ley 26271 aplicado (50% de descuento en horario 05:00 a 24:00)',
       esMedioPasaje: true,
-      acreditacionId: acreditacion.id,
-    };
-  } else {
-    return {
-      tarifaId: tarifaNormal.id,
-      tipoPasajero: 'UNIVERSITARIA',
-      tipoTarifaAplicada: 'NORMAL',
-      monto: parseFloat(tarifaNormal.monto),
-      descuento: 0,
-      motivo: 'Acreditación universitaria fuera del horario reglamentario (05:00 a 24:00 días laborables)',
-      esMedioPasaje: false,
+      acreditacionId: accreditation.id,
     };
   }
+
+  return {
+    tarifaId: normalFare.id,
+    tipoPasajero: 'UNIVERSITARIA',
+    tipoTarifaAplicada: 'NORMAL',
+    monto: Number(normalFare.monto),
+    descuento: 0,
+    motivo: 'Acreditación universitaria fuera del horario reglamentario (05:00 a 24:00 días laborables)',
+    esMedioPasaje: false,
+  };
 };
 
-module.exports = {
-  calculateApplicableFare,
-};
+module.exports = { calculateApplicableFare };

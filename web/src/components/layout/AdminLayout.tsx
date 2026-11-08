@@ -39,6 +39,7 @@ export const AdminLayout: React.FC = () => {
 
   const superAdminLinks = [
     { to: '/superadmin/dashboard', label: 'Supervisión General', icon: LayoutDashboard },
+    { to: '/superadmin/claims', label: 'Incidencias para SIT-Pay', icon: AlertOctagon },
     { to: '/superadmin/companies', label: 'Empresas y Cuencas (C2-C11)', icon: Building2 },
     { to: '/superadmin/fares', label: 'Tarifas Ley 26271', icon: Sliders },
     { to: '/superadmin/users', label: 'Gestión de Administradores', icon: Users },

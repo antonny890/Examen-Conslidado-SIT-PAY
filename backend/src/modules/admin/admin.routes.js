@@ -4,10 +4,10 @@
 const express = require('express');
 const router = express.Router();
 const adminController = require('./admin.controller');
-const authenticateJWT = require('../../middlewares/auth');
+const authenticateFirebaseToken = require('../../middlewares/auth');
 const authorizeRoles = require('../../middlewares/rbac');
 
-router.use(authenticateJWT);
+router.use(authenticateFirebaseToken);
 router.use(authorizeRoles('SUPER_ADMIN'));
 
 router.get('/dashboard', adminController.getGlobalDashboard);

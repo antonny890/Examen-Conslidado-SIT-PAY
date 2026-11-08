@@ -6,13 +6,22 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
+import 'package:provider/provider.dart';
 
+import '../../passenger/screens/passenger_home_screen.dart';
+import '../models/google_sign_in_result.dart';
+import '../providers/auth_provider.dart';
 import 'email_verification_screen.dart';
 
 class FaceVerificationScreen extends StatefulWidget {
-  const FaceVerificationScreen({super.key, required this.email});
+  const FaceVerificationScreen({
+    super.key,
+    required this.email,
+    this.googleRegistration,
+  });
 
   final String email;
+  final GooglePassengerRegistration? googleRegistration;
 
   @override
   State<FaceVerificationScreen> createState() => _FaceVerificationScreenState();
@@ -34,6 +43,7 @@ class _FaceVerificationScreenState extends State<FaceVerificationScreen>
   bool _consentGiven = false;
   bool _isInitializing = false;
   bool _isCapturing = false;
+  bool _isSubmittingRegistration = false;
   bool _isProcessingFrame = false;
   bool _cameraReady = false;
   bool _hasOneCenteredFace = false;
@@ -392,6 +402,52 @@ class _FaceVerificationScreenState extends State<FaceVerificationScreen>
   Future<void> _continue() async {
     final selfie = _selfie;
     if (selfie == null) return;
+
+    final googleRegistration = widget.googleRegistration;
+    if (googleRegistration != null) {
+      setState(() => _isSubmittingRegistration = true);
+      final registered = await context
+          .read<AuthProvider>()
+          .completeGooglePassengerRegistration(
+            registration: googleRegistration,
+          );
+      if (!mounted) return;
+      if (!registered) {
+        setState(() => _isSubmittingRegistration = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              context.read<AuthProvider>().errorMessage ??
+                  'No se pudo completar el registro con Google.',
+            ),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+        return;
+      }
+
+      await _releaseCamera();
+      try {
+        await File(selfie.path).delete();
+      } on FileSystemException {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'La selfie temporal no se pudo eliminar; el sistema la retirará de la caché.',
+              ),
+            ),
+          );
+        }
+      }
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const PassengerHomeScreen()),
+        (_) => false,
+      );
+      return;
+    }
+
     await _releaseCamera();
     try {
       await File(selfie.path).delete();
@@ -525,8 +581,14 @@ class _FaceVerificationScreenState extends State<FaceVerificationScreen>
               ),
               const SizedBox(height: 8),
               FilledButton(
-                onPressed: _continue,
-                child: const Text('Continuar'),
+                onPressed: _isSubmittingRegistration ? null : _continue,
+                child: _isSubmittingRegistration
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Continuar'),
               ),
             ],
             if (_isInitializing) ...[
