@@ -118,6 +118,13 @@ El backend ya no crea cuentas demo con contraseñas conocidas. El primer `SUPER_
 
    La API valida Firebase ID tokens; el refresh token se intercambia en el backend. `FIREBASE_WEB_API_KEY` es la clave pública de configuración web necesaria para intercambiar credenciales con Firebase Authentication. No incluyas la clave privada de Admin ni `MIGO_API_TOKEN` en los frontends o en Git.
 
+   **Reglas de Firebase:** los frontends acceden a Firestore y Storage exclusivamente a través del backend. Las reglas raíz `firestore.rules` y `storage.rules` deniegan el acceso directo desde clientes; Firebase Admin SDK del backend no está sujeto a estas reglas. Vincula el proyecto correcto con Firebase CLI y despliega solo después de comprobar que es el proyecto esperado:
+   ```bash
+   firebase use <project-id>
+   firebase deploy --only firestore:rules,storage
+   ```
+   No despliegues estas reglas si en el futuro agregas lecturas/escrituras directas desde un frontend; define primero reglas específicas para ese flujo.
+
 3. **Inicializar Firestore y la cuenta de primer acceso**:
    ```bash
    npm run seed:firebase
