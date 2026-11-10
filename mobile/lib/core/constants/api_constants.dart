@@ -1,13 +1,13 @@
 /// Constantes de red y endpoints de SIT-Pay Arequipa
 class ApiConstants {
-  // En emulador Android usar 10.0.2.2; en dispositivo físico o emulador iOS usar IP local de la red
+  // Override with SITPAY_API_URL when running a local backend.
   static const String defaultBaseUrl = String.fromEnvironment(
     'SITPAY_API_URL',
-    defaultValue: 'http://10.0.2.2:5000/api/v1',
+    defaultValue: 'https://sit-pay-backend.onrender.com/api/v1',
   );
   static const String socketUrl = String.fromEnvironment(
     'SITPAY_SOCKET_URL',
-    defaultValue: 'http://10.0.2.2:5000',
+    defaultValue: 'https://sit-pay-backend.onrender.com',
   );
 
   // Autenticación

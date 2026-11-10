@@ -24,16 +24,19 @@ Supabase Auth and PostgreSQL. Run the backend migrations before using the flow.
 
 ## Backend networking
 
-The default API and Socket.IO addresses target an Android emulator. For a
-physical phone or iOS simulator, pass the reachable computer IP when launching:
+The default API and Socket.IO addresses use the deployed Render backend. To use
+a local backend, pass its reachable address when launching; for an Android
+emulator use `10.0.2.2`, while a physical phone needs the computer's LAN IP:
 
 ```powershell
-flutter run --dart-define=SITPAY_API_URL=http://192.168.1.50:5000/api/v1 --dart-define=SITPAY_SOCKET_URL=http://192.168.1.50:5000
+flutter run --dart-define=SITPAY_API_URL=http://10.0.2.2:5000/api/v1 --dart-define=SITPAY_SOCKET_URL=http://10.0.2.2:5000
 ```
 
 Replace the example IP with the host running the backend. The phone and computer
 must be able to reach each other over the network. Configure `CORS_ORIGIN` for
-the web application's origin.
+the web application's origin. The DNI lookup sends the consented DNI to the
+backend, which calls Migo; keep `MIGO_API_TOKEN` only in the backend's Render
+environment, never in the mobile app.
 
 ## Simulated payment methods
 

@@ -145,12 +145,13 @@ El backend ya no crea cuentas demo con contraseñas conocidas. El primer `SUPER_
    ```
 
 3. **Configurar el backend para el dispositivo**:
-   - El valor predeterminado `http://10.0.2.2:5000/api/v1` sirve para un emulador Android.
-   - Para un teléfono físico o iOS, pasa la IP accesible de la computadora que ejecuta el backend.
+   - MOBILE usa por defecto el backend desplegado en Render.
+   - Para probar un backend local, pasa `SITPAY_API_URL` y `SITPAY_SOCKET_URL`; en emulador Android usa `10.0.2.2`, y en un teléfono físico usa la IP local de la computadora.
+   - El backend permite orígenes `localhost` y `127.0.0.1` para Flutter Web en desarrollo, incluso cuando Flutter asigna un puerto dinámico; los demás orígenes deben estar en `CORS_ORIGIN`.
 
 4. **Ejecutar la app móvil**:
    ```bash
-   flutter run --dart-define=SITPAY_API_URL=http://192.168.1.50:5000/api/v1 --dart-define=SITPAY_SOCKET_URL=http://192.168.1.50:5000
+   flutter run --dart-define=SITPAY_API_URL=http://10.0.2.2:5000/api/v1 --dart-define=SITPAY_SOCKET_URL=http://10.0.2.2:5000
    ```
 
 ---

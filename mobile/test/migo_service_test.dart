@@ -5,34 +5,34 @@ void main() {
   group('MigoService.parseNombreCompleto', () {
     test('separa dos apellidos de una persona con un nombre', () {
       final identity = MigoService.parseNombreCompleto(
-        'MAMANCHURA ALCCA MELBER',
+        'APELLIDO1 APELLIDO2 NOMBRE1',
       );
 
-      expect(identity.apellidos, 'MAMANCHURA ALCCA');
-      expect(identity.nombres, 'MELBER');
+      expect(identity.apellidos, 'APELLIDO1 APELLIDO2');
+      expect(identity.nombres, 'NOMBRE1');
     });
 
     test('mantiene todos los nombres cuando tiene dos nombres', () {
       final identity = MigoService.parseNombreCompleto(
-        'MAMANCHURA ALCCA MELBER ANTONNY',
+        'APELLIDO1 APELLIDO2 NOMBRE1 NOMBRE2',
       );
 
-      expect(identity.apellidos, 'MAMANCHURA ALCCA');
-      expect(identity.nombres, 'MELBER ANTONNY');
+      expect(identity.apellidos, 'APELLIDO1 APELLIDO2');
+      expect(identity.nombres, 'NOMBRE1 NOMBRE2');
     });
 
     test('mantiene todos los nombres cuando tiene tres nombres', () {
       final identity = MigoService.parseNombreCompleto(
-        'MAMANCHURA ALCCA MELBER ANTONNY JOSE',
+        'APELLIDO1 APELLIDO2 NOMBRE1 NOMBRE2 NOMBRE3',
       );
 
-      expect(identity.apellidos, 'MAMANCHURA ALCCA');
-      expect(identity.nombres, 'MELBER ANTONNY JOSE');
+      expect(identity.apellidos, 'APELLIDO1 APELLIDO2');
+      expect(identity.nombres, 'NOMBRE1 NOMBRE2 NOMBRE3');
     });
 
     test('rechaza una respuesta sin dos apellidos y un nombre', () {
       expect(
-        () => MigoService.parseNombreCompleto('MAMANCHURA MELBER'),
+        () => MigoService.parseNombreCompleto('APELLIDO1 NOMBRE1'),
         throwsFormatException,
       );
     });
