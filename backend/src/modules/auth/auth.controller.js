@@ -109,20 +109,14 @@ const releaseDniReservation = async ({ reference, reservationId }) => {
   });
 };
 
-const linkDniToUser = async ({ reference, reservationId, uid }) => {
+const linkDniToUser = async ({ reference, uid }) => {
   await db.runTransaction(async (transaction) => {
-    const snapshot = await transaction.get(reference);
-    if (!snapshot.exists || snapshot.data().reservation_id !== reservationId) {
-      const conflict = new Error('DNI_REGISTRATION_IN_PROGRESS');
-      conflict.code = 'DNI_REGISTRATION_IN_PROGRESS';
-      throw conflict;
-    }
-    transaction.update(reference, {
+    transaction.set(reference, {
       usuario_id: uid,
       reservation_id: null,
       reservation_expires_at: null,
       updated_at: new Date(),
-    });
+    }, { merge: true });
   });
 };
 
@@ -332,12 +326,6 @@ const registerPassenger = async (req, res, next) => {
   } catch (error) {
     if (error.code === 'DNI_ALREADY_REGISTERED') {
       return res.status(409).json({ success: false, message: 'Este DNI ya está registrado en SIT-PAY.' });
-    }
-    if (error.code === 'DNI_REGISTRATION_IN_PROGRESS') {
-      return res.status(409).json({
-        success: false,
-        message: 'Ya hay un registro en curso con este DNI. Espera unos minutos e inténtalo nuevamente.',
-      });
     }
     if (error.code === 'auth/email-already-exists' || error.code === 'EMAIL_ALREADY_REGISTERED') {
       return res.status(409).json({ success: false, message: 'El correo electrónico ya se encuentra registrado.' });
@@ -593,12 +581,6 @@ const googlePassengerAuth = async (req, res, next) => {
   } catch (error) {
     if (error.code === 'DNI_ALREADY_REGISTERED') {
       return res.status(409).json({ success: false, message: 'Este DNI ya está registrado en SIT-PAY.' });
-    }
-    if (error.code === 'DNI_REGISTRATION_IN_PROGRESS') {
-      return res.status(409).json({
-        success: false,
-        message: 'Ya hay un registro en curso con este DNI. Espera unos minutos e inténtalo nuevamente.',
-      });
     }
     if (error.code === 'auth/email-already-exists' || error.code === 'EMAIL_ALREADY_REGISTERED') {
       return res.status(409).json({ success: false, message: 'El correo electrónico ya se encuentra registrado.' });
