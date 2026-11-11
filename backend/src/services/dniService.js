@@ -25,12 +25,13 @@ async function lookupDniName(dni) {
   const timeout = setTimeout(() => controller.abort(), 10000);
 
   try {
-    const response = await fetch(`https://api.migo.pe/api/v2/dni/${dni}`, {
-      method: 'GET',
+    const response = await fetch('https://api.migo.pe/api/v1/dni', {
+      method: 'POST',
       headers: {
-        Authorization: `Bearer ${token}`,
         Accept: 'application/json',
+        'Content-Type': 'application/json',
       },
+      body: JSON.stringify({ token, dni }),
       signal: controller.signal,
     });
 
@@ -47,10 +48,32 @@ async function lookupDniName(dni) {
     const fullName = typeof result?.nombre === 'string'
       ? result.nombre.trim()
       : '';
-    if (response.ok && result?.success === true && fullName) {
+    const returnedDni = typeof result?.dni === 'string'
+      ? result.dni.trim()
+      : '';
+    if (
+      response.ok &&
+      result?.success !== false &&
+      fullName &&
+      (!returnedDni || returnedDni === dni)
+    ) {
       return fullName;
     }
 
+    if (response.status === 401 || response.status === 403) {
+      throw new DniProviderError(
+        502,
+        'Migo rechazó las credenciales de consulta. Verifica MIGO_API_TOKEN en Render.',
+        'DNI_PROVIDER_AUTH_FAILED',
+      );
+    }
+    if (response.status === 429) {
+      throw new DniProviderError(
+        503,
+        'Migo limitó temporalmente las consultas. Inténtalo más tarde.',
+        'DNI_PROVIDER_RATE_LIMITED',
+      );
+    }
     throw new DniProviderError(
       response.status === 404 ? 404 : 502,
       'No se pudo verificar el DNI. Revisa el número e inténtalo nuevamente.',
