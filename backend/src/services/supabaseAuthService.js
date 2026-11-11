@@ -63,21 +63,23 @@ const refreshSession = async (refreshToken) => {
   return sessionTokens(data.session);
 };
 
-const requestSignupOtp = async (email) => {
-  const { error } = await supabase.auth.resend({ type: 'signup', email });
+const requestSignupEmailLink = async (email) => {
+  const { error } = await supabase.auth.resend({
+    type: 'signup',
+    email,
+    options: { emailRedirectTo: 'sitpay://auth-callback' },
+  });
   if (error) throwAuthError(error);
 };
 
-const verifySignupOtp = async (email, token) => {
+const verifySignupEmailTokenHash = async (tokenHash) => {
   const { data, error } = await supabase.auth.verifyOtp({
-    email,
-    token,
+    token_hash: tokenHash,
     type: 'signup',
   });
   if (error) throwAuthError(error);
   return {
     user: data.user,
-    tokens: sessionTokens(data.session),
   };
 };
 
@@ -175,9 +177,9 @@ module.exports = {
   refreshSession,
   revokeSession,
   requestPasswordReset,
-  requestSignupOtp,
+  requestSignupEmailLink,
   signInWithPassword,
   verifyAccessToken,
   verifyPasswordResetOtp,
-  verifySignupOtp,
+  verifySignupEmailTokenHash,
 };

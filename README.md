@@ -178,7 +178,7 @@ El backend ya no crea cuentas demo con contraseñas conocidas. El primer `SUPER_
 
 1. Ejecuta las migraciones y `seed:supabase`. El seed crea roles, unidades de negocio, tarifas base y únicamente la cuenta `SUPER_ADMIN` definida en el entorno; no hay cuentas de demostración ni empresas, vehículos o choferes precargados.
 2. Inicia sesión en el panel con las credenciales locales del superadministrador. Registra una empresa y crea sus cuentas administrativas; desde los módulos correspondientes registra vehículos y vincula choferes.
-3. Registra un pasajero desde la app. Para verificar el DNI y completar los códigos de correo, configura `MIGO_API_TOKEN` y un proveedor de correo en el backend. Google OAuth requiere además configurar `GOOGLE_CLIENT_ID`.
+3. Registra un pasajero desde la app. Para verificar el DNI y enviar el enlace de confirmación, configura `MIGO_API_TOKEN` y el correo de Supabase Auth. Agrega `sitpay://auth-callback` a las Redirect URLs permitidas en Supabase. Google OAuth requiere además configurar `GOOGLE_CLIENT_ID`.
 4. Prueba la acreditación universitaria usando un correo de un dominio permitido. La verificación del correo institucional activa automáticamente el beneficio; no requiere aprobación de la empresa.
 5. Si pruebas los métodos de pago, usa únicamente tarjetas ficticias que empiecen con `9999`. Los pagos del prototipo y sus avisos se marcan como simulados y no generan cargos.
 6. Prueba reclamos, pagos y notificaciones después de crear usuarios y datos relacionados. El backend usa PostgreSQL; no se proporcionan contraseñas compartidas ni datos seed de empresas o pasajeros.

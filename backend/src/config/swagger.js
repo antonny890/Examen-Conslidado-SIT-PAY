@@ -119,7 +119,7 @@ SIT-Pay no almacena dinero ni mantiene saldos. Los pagos de esta versión son si
     '/auth/registration-email/request': {
       post: {
         tags: ['Autenticación'],
-        summary: 'Enviar código de confirmación de registro por correo',
+        summary: 'Enviar enlace de confirmación de registro por correo',
         security: [],
         requestBody: {
           required: true,
@@ -134,17 +134,17 @@ SIT-Pay no almacena dinero ni mantiene saldos. Los pagos de esta versión son si
           },
         },
         responses: {
-          200: { description: 'Código enviado; expira en 5 minutos y puede reenviarse cada 60 segundos' },
+          200: { description: 'Enlace enviado; puede reenviarse cada 60 segundos' },
           400: { description: 'No existe un registro pendiente para este correo' },
-          429: { description: 'Tiempo de espera de reenvío o límite de intentos' },
-          503: { description: 'Servicio SMTP no configurado' },
+          429: { description: 'Tiempo de espera antes de reenviar el enlace' },
+          503: { description: 'Supabase Auth no está disponible' },
         },
       },
     },
-    '/auth/registration-email/verify': {
+    '/auth/registration-email/confirm-link': {
       post: {
         tags: ['Autenticación'],
-        summary: 'Verificar código de registro y activar la cuenta',
+        summary: 'Confirmar registro desde el enlace enviado por correo',
         security: [],
         requestBody: {
           required: true,
@@ -152,19 +152,21 @@ SIT-Pay no almacena dinero ni mantiene saldos. Los pagos de esta versión son si
             'application/json': {
               schema: {
                 type: 'object',
-                required: ['email', 'code'],
                 properties: {
-                  email: { type: 'string', format: 'email' },
-                  code: { type: 'string', pattern: '^\\d{6}$' },
+                  accessToken: { type: 'string' },
+                  tokenHash: { type: 'string' },
                 },
+                oneOf: [
+                  { required: ['accessToken'] },
+                  { required: ['tokenHash'] },
+                ],
               },
             },
           },
         },
         responses: {
           200: { description: 'Correo confirmado; devuelve el perfil y tokens de sesión' },
-          400: { description: 'Código inválido, expirado o cuenta no pendiente' },
-          429: { description: 'Se agotaron los intentos de verificación' },
+          400: { description: 'Enlace inválido, expirado o cuenta no pendiente' },
         },
       },
     },

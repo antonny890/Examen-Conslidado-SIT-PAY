@@ -25,14 +25,17 @@ class ApiClient {
       InterceptorsWrapper(
         onRequest: (options, handler) async {
           final token = await SecureStorageService.getAccessToken();
-          if (token != null && token.isNotEmpty) {
+          if (token != null &&
+              token.isNotEmpty &&
+              !options.headers.containsKey('Authorization')) {
             options.headers['Authorization'] = 'Bearer $token';
           }
           return handler.next(options);
         },
         onError: (DioException error, handler) async {
           // Si el token expiró (401), intentar refresh token
-          if (error.response?.statusCode == 401) {
+          if (error.response?.statusCode == 401 &&
+              error.requestOptions.extra['skipAuthRefresh'] != true) {
             final refreshToken = await SecureStorageService.getRefreshToken();
             if (refreshToken != null) {
               try {

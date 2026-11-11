@@ -8,6 +8,20 @@ class SecureStorageService {
   static const String _keyRefreshToken = 'sit_pay_refresh_token';
   static const String _keyUserRole = 'sit_pay_user_role';
   static const String _keyUserData = 'sit_pay_user_data';
+  static const String _keyPendingRegistrationEmail =
+      'sit_pay_pending_registration_email';
+
+  static Future<void> savePendingRegistrationEmail(String email) async {
+    await _storage.write(key: _keyPendingRegistrationEmail, value: email);
+  }
+
+  static Future<String?> getPendingRegistrationEmail() async {
+    return _storage.read(key: _keyPendingRegistrationEmail);
+  }
+
+  static Future<void> clearPendingRegistrationEmail() async {
+    await _storage.delete(key: _keyPendingRegistrationEmail);
+  }
 
   // Guardar tokens de sesión
   static Future<void> saveTokens({

@@ -621,7 +621,7 @@ const logout = async (req, res, next) => {
   }
 };
 
-const requestRegistrationEmailCode = async (req, res, next) => {
+const requestRegistrationEmailLink = async (req, res, next) => {
   try {
     const email = normalizeEmail(req.body?.email);
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -631,9 +631,6 @@ const requestRegistrationEmailCode = async (req, res, next) => {
     if (!user || user.rol_codigo !== 'PASAJERO' || user.email_verificado === true) {
       return res.status(400).json({ success: false, message: 'No hay una cuenta pendiente de confirmación para este correo.' });
     }
-    const autoFillEnabled =
-      process.env.NODE_ENV === 'development' &&
-      process.env.REGISTRATION_EMAIL_DEV_AUTOFILL === 'true';
     const now = new Date();
     const sentAt = user.email_verification_sent_at?.toDate
       ? user.email_verification_sent_at.toDate()
@@ -641,37 +638,26 @@ const requestRegistrationEmailCode = async (req, res, next) => {
         ? new Date(user.email_verification_sent_at)
         : null;
     const elapsed = sentAt ? Math.floor((now.getTime() - sentAt.getTime()) / 1000) : 60;
-    if (!autoFillEnabled && elapsed < 60) {
+    if (elapsed < 60) {
       return res.status(429).json({
         success: false,
-        message: 'Espera antes de solicitar otro código.',
+        message: 'Espera antes de solicitar otro correo de confirmación.',
         retryAfterSeconds: 60 - elapsed,
       });
     }
-    let code;
-    if (autoFillEnabled) {
-      code = crypto.randomInt(100000, 1000000).toString();
-    } else {
-      await supabaseAuth.requestSignupOtp(email);
-    }
+    await supabaseAuth.requestSignupEmailLink(email);
     await db.collection(COLLECTION).doc(user.id).update({
-      email_verification_code_hash: code
-        ? crypto.createHash('sha256').update(code).digest('hex')
-        : null,
-      email_verification_expires_at: new Date(now.getTime() + 5 * 60 * 1000),
+      email_verification_code_hash: null,
+      email_verification_expires_at: null,
       email_verification_sent_at: now,
       email_verification_attempts: 0,
       updated_at: now,
     });
     return res.json({
       success: true,
-      message: autoFillEnabled
-        ? 'Código de demostración generado para desarrollo.'
-        : 'Código de verificación enviado al correo.',
+      message: 'Enlace de confirmación enviado al correo.',
       data: {
-        expiresInSeconds: 300,
         resendAfterSeconds: 60,
-        ...(autoFillEnabled ? { simulated: true, autoCode: code } : {}),
       },
     });
   } catch (error) {
@@ -679,62 +665,62 @@ const requestRegistrationEmailCode = async (req, res, next) => {
   }
 };
 
-const verifyRegistrationEmailCode = async (req, res, next) => {
+const confirmRegistrationEmailLink = async (req, res, next) => {
   try {
-    const email = normalizeEmail(req.body?.email);
-    const code = String(req.body?.code || '').trim();
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !/^\d{6}$/.test(code)) {
-      return res.status(400).json({ success: false, message: 'Ingresa un correo válido y el código de 6 dígitos.' });
+    const accessToken = String(req.body?.accessToken || '').trim();
+    const tokenHash = String(req.body?.tokenHash || '').trim();
+    if (!accessToken && !tokenHash) {
+      return res.status(400).json({
+        success: false,
+        code: 'EMAIL_LINK_INVALID',
+        message: 'El enlace no contiene una confirmación válida. Solicita uno nuevo.',
+      });
     }
-    const user = await getUserByEmail(email);
-    if (!user || user.rol_codigo !== 'PASAJERO' || user.email_verificado === true) {
-      return res.status(400).json({ success: false, message: 'No hay una cuenta pendiente de confirmación para este correo.' });
-    }
-    if ((user.email_verification_attempts || 0) >= 5) {
-      return res.status(429).json({ success: false, message: 'Se agotaron los intentos. Solicita un nuevo código.' });
-    }
-    const expiresAt = new Date(user.email_verification_expires_at || 0);
-    if (expiresAt.getTime() <= Date.now()) {
-      return res.status(400).json({ success: false, message: 'El código expiró. Solicita uno nuevo.' });
-    }
-    const autoFillEnabled =
-      process.env.NODE_ENV === 'development' &&
-      process.env.REGISTRATION_EMAIL_DEV_AUTOFILL === 'true';
-    let verifiedTokens;
-    if (autoFillEnabled && user.email_verification_code_hash) {
-      const expectedHash = Buffer.from(user.email_verification_code_hash, 'hex');
-      const submittedHash = Buffer.from(crypto.createHash('sha256').update(code).digest('hex'), 'hex');
-      if (expectedHash.length === submittedHash.length && crypto.timingSafeEqual(expectedHash, submittedHash)) {
-        await auth.updateUser(user.id, { emailVerified: true });
-      } else {
-        const attempts = (user.email_verification_attempts || 0) + 1;
-        await db.collection(COLLECTION).doc(user.id).update({ email_verification_attempts: attempts });
-        return res.status(attempts >= 5 ? 429 : 400).json({
-          success: false,
-          message: attempts >= 5
-            ? 'Se agotaron los intentos. Solicita un nuevo código.'
-            : `El código no es correcto. Intentos restantes: ${5 - attempts}.`,
-        });
-      }
-    } else {
-      try {
-        const verification = await supabaseAuth.verifySignupOtp(email, code);
-        if (verification.user.id !== user.id) {
-          return res.status(400).json({ success: false, message: 'El código no pertenece a esta cuenta.' });
+
+    let verifiedUser;
+    try {
+      if (accessToken) {
+        const claims = await supabaseAuth.verifyAccessToken(accessToken);
+        if (claims.email_verified !== true) {
+          return res.status(400).json({
+            success: false,
+            code: 'EMAIL_LINK_NOT_CONFIRMED',
+            message: 'El enlace aún no confirma el correo. Ábrelo desde tu bandeja de entrada.',
+          });
         }
-        verifiedTokens = verification.tokens;
-      } catch (error) {
-        if (!error.statusCode || error.statusCode >= 500) throw error;
-        const attempts = (user.email_verification_attempts || 0) + 1;
-        await db.collection(COLLECTION).doc(user.id).update({ email_verification_attempts: attempts });
-        return res.status(attempts >= 5 ? 429 : 400).json({
+        verifiedUser = { id: claims.uid, email: claims.email };
+      } else {
+        const verification = await supabaseAuth.verifySignupEmailTokenHash(tokenHash);
+        verifiedUser = verification.user;
+      }
+    } catch (error) {
+      if (error.statusCode && error.statusCode < 500) {
+        return res.status(400).json({
           success: false,
-          message: attempts >= 5
-            ? 'Se agotaron los intentos. Solicita un nuevo código.'
-            : `El código no es correcto. Intentos restantes: ${5 - attempts}.`,
+          code: 'EMAIL_LINK_INVALID_OR_EXPIRED',
+          message: 'El enlace expiró, ya fue utilizado o no es válido. Solicita uno nuevo.',
         });
       }
+      throw error;
     }
+
+    const user = verifiedUser?.id
+      ? await getDocument(COLLECTION, verifiedUser.id)
+      : await getUserByEmail(normalizeEmail(verifiedUser?.email));
+    if (
+      !user ||
+      user.rol_codigo !== 'PASAJERO' ||
+      normalizeEmail(user.email) !== normalizeEmail(verifiedUser?.email) ||
+      user.estado !== 'ACTIVO' ||
+      user.deleted_at
+    ) {
+      return res.status(400).json({
+        success: false,
+        code: 'EMAIL_LINK_ACCOUNT_MISMATCH',
+        message: 'El enlace no corresponde a una cuenta pendiente de SIT-PAY.',
+      });
+    }
+
     await db.collection(COLLECTION).doc(user.id).update({
       email_verificado: true,
       email_verification_code_hash: null,
@@ -750,7 +736,7 @@ const verifyRegistrationEmailCode = async (req, res, next) => {
       message: 'Correo confirmado. Tu cuenta está activa.',
       data: {
         usuario: await getSessionUser(updatedUser),
-        tokens: verifiedTokens || await issueSession(user.id),
+        tokens: await issueSession(user.id),
       },
     });
   } catch (error) {
@@ -841,7 +827,7 @@ module.exports = {
   logout,
   refreshToken,
   registerPassenger,
-  requestRegistrationEmailCode,
+  requestRegistrationEmailLink,
+  confirmRegistrationEmailLink,
   resetPassword,
-  verifyRegistrationEmailCode,
 };

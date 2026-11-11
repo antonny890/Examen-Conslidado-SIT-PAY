@@ -20,14 +20,18 @@ class AuthProvider extends ChangeNotifier {
   String? _errorMessage;
   String? _pendingRegistrationEmail;
   String _pendingRegistrationAlias = '';
-  String? _registrationAutoCode;
 
   UserModel? get currentUser => _currentUser;
   bool get isLoading => _isLoading;
   bool get isDemoMode => _isDemoMode;
   String? get errorMessage => _errorMessage;
   bool get isAuthenticated => _currentUser != null;
-  String? get registrationAutoCode => _registrationAutoCode;
+  String? get pendingRegistrationEmail => _pendingRegistrationEmail;
+
+  Future<void> restorePendingRegistrationEmail() async {
+    _pendingRegistrationEmail =
+        await SecureStorageService.getPendingRegistrationEmail();
+  }
 
   // 1. Verificar sesión persistente al abrir la app
   Future<bool> checkCurrentSession() async {
@@ -65,7 +69,6 @@ class AuthProvider extends ChangeNotifier {
     _errorMessage = null;
     _pendingRegistrationEmail = null;
     _pendingRegistrationAlias = '';
-    _registrationAutoCode = null;
     notifyListeners();
 
     try {
@@ -80,6 +83,7 @@ class AuthProvider extends ChangeNotifier {
       if (response.statusCode == 200 && response.data['success'] == true) {
         final data = response.data['data'];
         await _saveAuthenticatedSession(data);
+        await SecureStorageService.clearPendingRegistrationEmail();
 
         _isLoading = false;
         notifyListeners();
@@ -212,7 +216,6 @@ class AuthProvider extends ChangeNotifier {
     _errorMessage = null;
     _pendingRegistrationEmail = null;
     _pendingRegistrationAlias = '';
-    _registrationAutoCode = null;
     _isDemoMode = true;
     _currentUser = UserModel(
       id: asDriver ? 'demo-driver' : 'demo-passenger',
@@ -253,7 +256,6 @@ class AuthProvider extends ChangeNotifier {
     _errorMessage = null;
     _pendingRegistrationEmail = null;
     _pendingRegistrationAlias = '';
-    _registrationAutoCode = null;
     notifyListeners();
 
     try {
@@ -275,6 +277,9 @@ class AuthProvider extends ChangeNotifier {
       if (response.statusCode == 201 && response.data['success'] == true) {
         _pendingRegistrationEmail = email.trim().toLowerCase();
         _pendingRegistrationAlias = alias.trim();
+        await SecureStorageService.savePendingRegistrationEmail(
+          _pendingRegistrationEmail!,
+        );
         _isLoading = false;
         notifyListeners();
         return true;
@@ -293,7 +298,7 @@ class AuthProvider extends ChangeNotifier {
     return false;
   }
 
-  Future<bool> requestRegistrationEmailCode(String email) async {
+  Future<bool> requestRegistrationEmailLink(String email) async {
     _errorMessage = null;
     final normalizedEmail = email.trim().toLowerCase();
     if (_pendingRegistrationEmail != null &&
@@ -302,61 +307,50 @@ class AuthProvider extends ChangeNotifier {
       return false;
     }
     try {
-      _registrationAutoCode = null;
       final response = await _apiClient.dio.post(
         ApiConstants.registrationEmailRequest,
         data: {'email': normalizedEmail},
       );
-      final sent =
-          response.statusCode == 200 && response.data['success'] == true;
-      if (sent) {
-        final responseData = response.data['data'];
-        final autoCode = responseData is Map ? responseData['autoCode'] : null;
-        _registrationAutoCode =
-            autoCode is String && RegExp(r'^\d{6}$').hasMatch(autoCode)
-                ? autoCode
-                : null;
-      }
-      return sent;
+      return response.statusCode == 200 && response.data['success'] == true;
     } on DioException catch (error) {
       final responseData = error.response?.data;
       _errorMessage = responseData is Map && responseData['message'] is String
           ? responseData['message'] as String
-          : 'No se pudo enviar el código. Comprueba tu conexión e inténtalo nuevamente.';
+          : 'No se pudo enviar el enlace. Comprueba tu conexión e inténtalo nuevamente.';
       return false;
     } catch (error) {
       _errorMessage =
-          'Ocurrió un error inesperado al solicitar el código: $error';
+          'Ocurrió un error inesperado al solicitar el enlace: $error';
       return false;
     }
   }
 
-  Future<bool> verifyRegistrationEmailCode({
-    required String email,
-    required String code,
+  Future<bool> confirmRegistrationEmailLink({
+    String? accessToken,
+    String? tokenHash,
   }) async {
-    final normalizedEmail = email.trim().toLowerCase();
-    if (_pendingRegistrationEmail != null &&
-        normalizedEmail != _pendingRegistrationEmail) {
-      _errorMessage = 'El correo no coincide con el que usaste al registrarte.';
-      return false;
-    }
-
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
       final response = await _apiClient.dio.post(
-        ApiConstants.registrationEmailVerify,
+        ApiConstants.registrationEmailConfirmLink,
         data: {
-          'email': normalizedEmail,
-          'code': code.trim(),
+          if (accessToken != null) 'accessToken': accessToken,
+          if (tokenHash != null) 'tokenHash': tokenHash,
         },
+        options: Options(
+          headers: accessToken == null
+              ? null
+              : {'Authorization': 'Bearer $accessToken'},
+          extra: const {'skipAuthRefresh': true},
+        ),
       );
       if (response.statusCode != 200 || response.data['success'] != true) {
         _errorMessage =
-            response.data['message'] ?? 'No se pudo verificar el código.';
+            response.data['message'] ??
+                'No se pudo confirmar el correo. Solicita un enlace nuevo.';
         _isLoading = false;
         notifyListeners();
         return false;
@@ -386,7 +380,7 @@ class AuthProvider extends ChangeNotifier {
 
       _pendingRegistrationEmail = null;
       _pendingRegistrationAlias = '';
-      _registrationAutoCode = null;
+      await SecureStorageService.clearPendingRegistrationEmail();
       _isLoading = false;
       notifyListeners();
       return true;
@@ -394,10 +388,10 @@ class AuthProvider extends ChangeNotifier {
       final responseData = error.response?.data;
       _errorMessage = responseData is Map && responseData['message'] is String
           ? responseData['message'] as String
-          : 'No se pudo verificar el código. Comprueba tu conexión e inténtalo nuevamente.';
+          : 'No se pudo confirmar el correo. Comprueba tu conexión e inténtalo nuevamente.';
     } catch (error) {
       _errorMessage =
-          'Ocurrió un error inesperado al verificar el código: $error';
+          'Ocurrió un error inesperado al confirmar el correo: $error';
     }
 
     _isLoading = false;
@@ -476,7 +470,6 @@ class AuthProvider extends ChangeNotifier {
     _isDemoMode = false;
     _pendingRegistrationEmail = null;
     _pendingRegistrationAlias = '';
-    _registrationAutoCode = null;
     notifyListeners();
   }
 }
