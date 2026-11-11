@@ -28,6 +28,7 @@ const companyRoutes = require('./modules/company/company.routes');
 const adminRoutes = require('./modules/admin/admin.routes');
 
 const app = express();
+app.set('trust proxy', 1);
 const server = http.createServer(app);
 const allowedOrigins = [
   ...(process.env.CORS_ORIGIN || 'http://localhost:3000,http://localhost:5173')
