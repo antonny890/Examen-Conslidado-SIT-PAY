@@ -1,7 +1,7 @@
 const crypto = require('node:crypto');
 const { OAuth2Client } = require('google-auth-library');
 const { auth } = require('../../services/supabaseAuthService');
-const { db, getDocument } = require('../../services/postgresData');
+const { db, getDocument, queryCollection } = require('../../services/postgresData');
 const supabaseAuth = require('../../services/supabaseAuthService');
 const {
   createUserAccount,
@@ -70,6 +70,18 @@ const namesMatch = (left, right) =>
 const createAccount = createUserAccount;
 
 const reserveDni = async (dni) => {
+  const registeredProfiles = await queryCollection(
+    PROFILES,
+    'numero_documento',
+    '==',
+    dni,
+  );
+  if (registeredProfiles.length > 0) {
+    const conflict = new Error('DNI_ALREADY_REGISTERED');
+    conflict.code = 'DNI_ALREADY_REGISTERED';
+    throw conflict;
+  }
+
   const dniHash = crypto.createHash('sha256').update(dni).digest('hex');
   const reference = db.collection('consultas_dni').doc(dniHash);
   const reservationId = crypto.randomUUID();
@@ -77,13 +89,13 @@ const reserveDni = async (dni) => {
     const snapshot = await transaction.get(reference);
     const current = snapshot.exists ? snapshot.data() : {};
     const reservationExpiresAt = new Date(current.reservation_expires_at || 0);
-    if (current.usuario_id ||
-        (current.reservation_id && reservationExpiresAt.getTime() > Date.now())) {
-      const conflict = new Error('DNI_ALREADY_REGISTERED');
-      conflict.code = 'DNI_ALREADY_REGISTERED';
+    if (current.reservation_id && reservationExpiresAt.getTime() > Date.now()) {
+      const conflict = new Error('DNI_REGISTRATION_IN_PROGRESS');
+      conflict.code = 'DNI_REGISTRATION_IN_PROGRESS';
       throw conflict;
     }
     transaction.set(reference, {
+      usuario_id: null,
       reservation_id: reservationId,
       reservation_expires_at: new Date(Date.now() + 30 * 60 * 1000),
       updated_at: new Date(),
@@ -108,9 +120,9 @@ const releaseDniReservation = async ({ reference, reservationId }) => {
 const linkDniToUser = async ({ reference, reservationId, uid }) => {
   await db.runTransaction(async (transaction) => {
     const snapshot = await transaction.get(reference);
-    if (!snapshot.exists || snapshot.data().reservation_id !== reservationId || snapshot.data().usuario_id) {
-      const conflict = new Error('DNI_ALREADY_REGISTERED');
-      conflict.code = 'DNI_ALREADY_REGISTERED';
+    if (!snapshot.exists || snapshot.data().reservation_id !== reservationId) {
+      const conflict = new Error('DNI_REGISTRATION_IN_PROGRESS');
+      conflict.code = 'DNI_REGISTRATION_IN_PROGRESS';
       throw conflict;
     }
     transaction.update(reference, {
@@ -257,9 +269,13 @@ const registerPassenger = async (req, res, next) => {
       return res.status(409).json({ success: false, message: 'El correo electrónico ya se encuentra registrado.' });
     }
 
-    const identityHash = crypto.createHash('sha256').update(dni).digest('hex');
-    const existingIdentity = await db.collection('consultas_dni').doc(identityHash).get();
-    if (existingIdentity.exists && existingIdentity.data().usuario_id) {
+    const registeredProfiles = await queryCollection(
+      PROFILES,
+      'numero_documento',
+      '==',
+      dni,
+    );
+    if (registeredProfiles.length > 0) {
       return res.status(409).json({ success: false, message: 'Este DNI ya está registrado en SIT-PAY.' });
     }
 
@@ -324,6 +340,12 @@ const registerPassenger = async (req, res, next) => {
   } catch (error) {
     if (error.code === 'DNI_ALREADY_REGISTERED') {
       return res.status(409).json({ success: false, message: 'Este DNI ya está registrado en SIT-PAY.' });
+    }
+    if (error.code === 'DNI_REGISTRATION_IN_PROGRESS') {
+      return res.status(409).json({
+        success: false,
+        message: 'Ya hay un registro en curso con este DNI. Espera unos minutos e inténtalo nuevamente.',
+      });
     }
     if (error.code === 'auth/email-already-exists' || error.code === 'EMAIL_ALREADY_REGISTERED') {
       return res.status(409).json({ success: false, message: 'El correo electrónico ya se encuentra registrado.' });
@@ -509,9 +531,13 @@ const googlePassengerAuth = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Ingresa un número de celular válido.' });
     }
 
-    const identityHash = crypto.createHash('sha256').update(dni).digest('hex');
-    const existingIdentity = await db.collection('consultas_dni').doc(identityHash).get();
-    if (existingIdentity.exists && existingIdentity.data().usuario_id) {
+    const registeredProfiles = await queryCollection(
+      PROFILES,
+      'numero_documento',
+      '==',
+      dni,
+    );
+    if (registeredProfiles.length > 0) {
       return res.status(409).json({ success: false, message: 'Este DNI ya está registrado en SIT-PAY.' });
     }
     let identity;
@@ -575,6 +601,12 @@ const googlePassengerAuth = async (req, res, next) => {
   } catch (error) {
     if (error.code === 'DNI_ALREADY_REGISTERED') {
       return res.status(409).json({ success: false, message: 'Este DNI ya está registrado en SIT-PAY.' });
+    }
+    if (error.code === 'DNI_REGISTRATION_IN_PROGRESS') {
+      return res.status(409).json({
+        success: false,
+        message: 'Ya hay un registro en curso con este DNI. Espera unos minutos e inténtalo nuevamente.',
+      });
     }
     if (error.code === 'auth/email-already-exists' || error.code === 'EMAIL_ALREADY_REGISTERED') {
       return res.status(409).json({ success: false, message: 'El correo electrónico ya se encuentra registrado.' });
