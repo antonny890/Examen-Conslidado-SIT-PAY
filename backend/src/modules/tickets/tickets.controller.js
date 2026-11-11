@@ -18,10 +18,10 @@ const expandTicket = async (transaction) => {
     : null;
   return {
     ...transaction,
-    placa: vehicle?.placa || '',
-    empresa_nombre: company?.nombre_comercial || '',
-    cuenca_codigo: unit?.codigo || '',
-    cuenca_nombre: unit?.nombre || '',
+    placa: transaction.placa_snapshot || vehicle?.placa || '',
+    empresa_nombre: transaction.empresa_nombre_snapshot || company?.nombre_comercial || '',
+    cuenca_codigo: transaction.unidad_codigo_snapshot || unit?.codigo || '',
+    cuenca_nombre: transaction.unidad_nombre_snapshot || unit?.nombre || '',
   };
 };
 

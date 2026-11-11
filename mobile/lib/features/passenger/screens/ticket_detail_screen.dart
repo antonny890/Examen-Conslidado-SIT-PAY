@@ -14,11 +14,17 @@ class TicketDetailScreen extends StatelessWidget {
         'BOL-20261030-000000';
     final fecha =
         ticket['fecha'] ?? ticket['fecha_pago'] ?? DateTime.now().toString();
-    final placa = ticket['placa'] ?? 'V7A-890';
+    final placa = ticket['placa'] ?? ticket['placa_snapshot'] ?? 'V7A-890';
     final empresa = ticket['empresa'] ??
         ticket['empresa_nombre'] ??
+        ticket['empresa_nombre_snapshot'] ??
         'Transcayma Operadora S.A.';
-    final cuenca = ticket['cuenca'] ?? 'C3 Cayma';
+    final unitSnapshot = [
+      ticket['unidad_codigo_snapshot'],
+      ticket['unidad_nombre_snapshot'],
+    ].whereType<String>().where((value) => value.isNotEmpty).join(' ');
+    final cuenca =
+        ticket['cuenca'] ?? (unitSnapshot.isEmpty ? 'C3 Cayma' : unitSnapshot);
     final monto = (ticket['monto'] as num?)?.toDouble() ?? 1.0;
     final tipoTarifa =
         ticket['tipoTarifa'] ?? ticket['tipo_tarifa_aplicada'] ?? 'NORMAL';

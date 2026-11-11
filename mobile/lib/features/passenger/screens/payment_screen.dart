@@ -45,6 +45,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
         break;
       }
     }
+
   }
 
   Future<void> _processPaymentByQR(String qrCode) async {
@@ -201,6 +202,29 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         ],
                       ),
                     ],
+                    if (vehiculo?['modelo'] is String &&
+                        (vehiculo['modelo'] as String).isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      _PaymentDetailRow(
+                        label: 'Modelo:',
+                        value: vehiculo['modelo'] as String,
+                      ),
+                    ],
+                    if (vehiculo?['anioFabricacion'] != null) ...[
+                      const SizedBox(height: 8),
+                      _PaymentDetailRow(
+                        label: 'Año:',
+                        value: vehiculo['anioFabricacion'].toString(),
+                      ),
+                    ],
+                    if (vehiculo?['capacidadPasajeros'] != null) ...[
+                      const SizedBox(height: 8),
+                      _PaymentDetailRow(
+                        label: 'Capacidad:',
+                        value:
+                            '${vehiculo['capacidadPasajeros']} pasajeros',
+                      ),
+                    ],
                     if (vehiculo?['choferAlias'] is String &&
                         (vehiculo['choferAlias'] as String).isNotEmpty) ...[
                       const SizedBox(height: 8),
@@ -261,6 +285,15 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   ],
                 ),
               ),
+              if (tarifa?['motivo'] is String &&
+                  (tarifa['motivo'] as String).isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  tarifa['motivo'] as String,
+                  style: Theme.of(ctx).textTheme.bodySmall,
+                  textAlign: TextAlign.center,
+                ),
+              ],
               const SizedBox(height: 24),
 
               if (paymentAvailable) ...[
@@ -500,59 +533,66 @@ class _PaymentScreenState extends State<PaymentScreen> {
       return;
     }
 
-    String? selectedMethodId = methods.first['id']?.toString();
-    final methodId = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      builder: (selectionContext) => StatefulBuilder(
-        builder: (context, setSelectionState) => SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'Elige una tarjeta de prueba',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Simulación únicamente. No se realizará un cargo real.',
-                ),
-                const SizedBox(height: 12),
-                RadioGroup<String>(
-                  groupValue: selectedMethodId,
-                  onChanged: (value) =>
-                      setSelectionState(() => selectedMethodId = value),
-                  child: Column(
-                    children: methods.map((method) {
-                      final id = method['id'].toString();
-                      return RadioListTile<String>(
-                        value: id,
-                        title:
-                            Text('Tarjeta •••• ${method['ultimos_digitos']}'),
-                        subtitle: Text(
-                          '${method['titular']} · ${method['mes_vencimiento']}/${method['anio_vencimiento']}',
-                        ),
-                      );
-                    }).toList(),
+    String? methodId;
+    if (methods.length == 1) {
+      methodId = methods.single['id']?.toString();
+    } else {
+      String? selectedMethodId = methods.first['id']?.toString();
+      methodId = await showModalBottomSheet<String>(
+        context: context,
+        isScrollControlled: true,
+        builder: (selectionContext) => StatefulBuilder(
+          builder: (context, setSelectionState) => SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Elige una tarjeta de prueba',
+                    style: Theme.of(context).textTheme.titleLarge,
                   ),
-                ),
-                const SizedBox(height: 8),
-                FilledButton(
-                  onPressed: selectedMethodId == null
-                      ? null
-                      : () => Navigator.pop(selectionContext, selectedMethodId),
-                  child:
-                      Text('Pagar S/ ${amount.toStringAsFixed(2)} (simulado)'),
-                ),
-              ],
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Simulación únicamente. No se realizará un cargo real.',
+                  ),
+                  const SizedBox(height: 12),
+                  RadioGroup<String>(
+                    groupValue: selectedMethodId,
+                    onChanged: (value) =>
+                        setSelectionState(() => selectedMethodId = value),
+                    child: Column(
+                      children: methods.map((method) {
+                        final id = method['id'].toString();
+                        return RadioListTile<String>(
+                          value: id,
+                          title:
+                              Text('Tarjeta •••• ${method['ultimos_digitos']}'),
+                          subtitle: Text(
+                            '${method['titular']} · ${method['mes_vencimiento']}/${method['anio_vencimiento']}',
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  FilledButton(
+                    onPressed: selectedMethodId == null
+                        ? null
+                        : () =>
+                            Navigator.pop(selectionContext, selectedMethodId),
+                    child: Text(
+                      'Pagar S/ ${amount.toStringAsFixed(2)} (simulado)',
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
-      ),
-    );
+      );
+    }
     if (methodId == null || !mounted) {
       if (mounted) setState(() => _isSubmittingPayment = false);
       return;
@@ -597,5 +637,29 @@ class _PaymentScreenState extends State<PaymentScreen> {
         ),
       );
     }
+  }
+}
+
+class _PaymentDetailRow extends StatelessWidget {
+  const _PaymentDetailRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: const TextStyle(color: Colors.grey)),
+        Flexible(
+          child: Text(
+            value,
+            textAlign: TextAlign.end,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+        ),
+      ],
+    );
   }
 }

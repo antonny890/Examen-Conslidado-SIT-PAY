@@ -121,6 +121,8 @@ El backend ya no crea cuentas demo con contraseñas conocidas. El primer `SUPER_
    ```
    Las migraciones crean el esquema PostgreSQL desde cero. El seed agrega roles, unidades de negocio, tarifas base y el `SUPER_ADMIN` indicado por el entorno; no elimina datos existentes.
 
+   La tabla `metodos_pago` guarda los métodos ficticios del pasajero. La migración de detalles del comprobante conserva placa, empresa, unidad de transporte y motivo de tarifa tal como estaban al pagar, aunque luego cambien los datos del vehículo. Después de desplegar nuevas migraciones, ejecuta `npm run migrate:latest` para aplicarlas al PostgreSQL de ese entorno; `npm start` no ejecuta migraciones automáticamente.
+
    **Pagos de prototipo:** la app acepta únicamente tarjetas ficticias de 16 dígitos que comiencen con `9999`. Se guardan en PostgreSQL solo el titular, los últimos cuatro dígitos y el vencimiento; el número completo y el CVV no se almacenan. Las transacciones y avisos al chofer quedan marcados como simulados. No ingreses tarjetas reales ni uses este flujo para cobrar dinero.
 
 4. **Iniciar el servidor backend**:
