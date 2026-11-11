@@ -86,18 +86,10 @@ const reserveDni = async (dni) => {
   const reference = db.collection('consultas_dni').doc(dniHash);
   const reservationId = crypto.randomUUID();
   await db.runTransaction(async (transaction) => {
-    const snapshot = await transaction.get(reference);
-    const current = snapshot.exists ? snapshot.data() : {};
-    const reservationExpiresAt = new Date(current.reservation_expires_at || 0);
-    if (current.reservation_id && reservationExpiresAt.getTime() > Date.now()) {
-      const conflict = new Error('DNI_REGISTRATION_IN_PROGRESS');
-      conflict.code = 'DNI_REGISTRATION_IN_PROGRESS';
-      throw conflict;
-    }
     transaction.set(reference, {
       usuario_id: null,
       reservation_id: reservationId,
-      reservation_expires_at: new Date(Date.now() + 30 * 60 * 1000),
+      reservation_expires_at: new Date(Date.now() + 5 * 60 * 1000),
       updated_at: new Date(),
     }, { merge: true });
   });
