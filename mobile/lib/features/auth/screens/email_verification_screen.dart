@@ -1,7 +1,11 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
+import '../../passenger/screens/passenger_home_screen.dart';
 
 class EmailVerificationScreen extends StatefulWidget {
   const EmailVerificationScreen({
@@ -20,7 +24,12 @@ class EmailVerificationScreen extends StatefulWidget {
 
 class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
   late final TextEditingController _emailController;
+  static const _simulationEnabled =
+      kDebugMode && bool.fromEnvironment('SITPAY_SIMULATE_EMAIL_CONFIRMATION');
+  Timer? _countdownTimer;
+  int _remainingSeconds = 10;
   bool _isSending = false;
+  bool _isSimulating = false;
   bool _initialRequestStarted = false;
   String? _errorMessage;
   String? _infoMessage;
@@ -31,6 +40,10 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
     _emailController = TextEditingController(text: widget.email);
     _errorMessage = widget.initialErrorMessage;
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _simulationEnabled && widget.email.isNotEmpty) {
+        _startSimulationCountdown();
+        return;
+      }
       if (mounted &&
           widget.email.isNotEmpty &&
           widget.initialErrorMessage == null &&
@@ -43,8 +56,55 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
 
   @override
   void dispose() {
+    _countdownTimer?.cancel();
     _emailController.dispose();
     super.dispose();
+  }
+
+  void _startSimulationCountdown() {
+    if (_countdownTimer != null || _isSimulating) return;
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_remainingSeconds <= 1) {
+        timer.cancel();
+        _countdownTimer = null;
+        setState(() => _remainingSeconds = 0);
+        _completeSimulation();
+      } else {
+        setState(() => _remainingSeconds--);
+      }
+    });
+  }
+
+  Future<void> _completeSimulation() async {
+    if (_isSimulating) return;
+    setState(() {
+      _isSimulating = true;
+      _errorMessage = null;
+    });
+
+    final auth = context.read<AuthProvider>();
+    final completed = await auth.simulateRegistrationEmailConfirmation(
+      _emailController.text,
+    );
+    if (!mounted) return;
+
+    if (completed) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const PassengerHomeScreen()),
+        (_) => false,
+      );
+      return;
+    }
+
+    setState(() {
+      _isSimulating = false;
+      _errorMessage = auth.errorMessage ??
+          'La simulación no está habilitada en el backend de desarrollo.';
+    });
   }
 
   String get _maskedEmail {
@@ -122,49 +182,105 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
               ),
             ),
             const SizedBox(height: 10),
-            Text(
-              'Te enviaremos un enlace. Ábrelo para confirmar tu cuenta; '
-              'no necesitas ingresar ningún código.',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 24),
-            TextField(
-              controller: _emailController,
-              keyboardType: TextInputType.emailAddress,
-              textInputAction: TextInputAction.done,
-              readOnly: widget.email.isNotEmpty,
-              decoration: const InputDecoration(
-                labelText: 'Correo electrónico',
-                prefixIcon: Icon(Icons.email_outlined),
-                border: OutlineInputBorder(),
+            if (_simulationEnabled) ...[
+              Text(
+                'Modo de demostración: no se enviará ningún correo. '
+                'La cuenta se activará automáticamente cuando termine el contador.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium,
               ),
-              onSubmitted: (_) => _sendLink(),
-            ),
-            const SizedBox(height: 18),
-            SizedBox(
-              height: 52,
-              child: FilledButton(
-                onPressed: _isSending ? null : _sendLink,
-                child: _isSending
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Enviar o reenviar enlace'),
+              const SizedBox(height: 20),
+              Text(
+                _maskedEmail,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
               ),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              'Cuando abras el enlace, SIT-PAY confirmará tu cuenta y te '
-              'devolverá a la aplicación. Si expiró o ya fue utilizado, '
-              'solicita un enlace nuevo.',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+              const SizedBox(height: 24),
+              Center(
+                child: SizedBox(
+                  width: 64,
+                  height: 64,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      CircularProgressIndicator(
+                        value: _remainingSeconds / 10,
+                        strokeWidth: 5,
+                      ),
+                      Text(
+                        '$_remainingSeconds',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(height: 12),
+              Text(
+                _isSimulating
+                    ? 'Activando la cuenta de demostración...'
+                    : _remainingSeconds > 0
+                        ? 'Confirmación simulada en $_remainingSeconds segundos'
+                        : 'No se pudo completar la simulación.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium,
+              ),
+              if (_remainingSeconds == 0 && !_isSimulating) ...[
+                const SizedBox(height: 14),
+                OutlinedButton(
+                  onPressed: _completeSimulation,
+                  child: const Text('Reintentar simulación'),
+                ),
+              ],
+            ] else ...[
+              Text(
+                'Te enviaremos un enlace. Ábrelo para confirmar tu cuenta; '
+                'no necesitas ingresar ningún código.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 24),
+              TextField(
+                controller: _emailController,
+                keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.done,
+                readOnly: widget.email.isNotEmpty,
+                decoration: const InputDecoration(
+                  labelText: 'Correo electrónico',
+                  prefixIcon: Icon(Icons.email_outlined),
+                  border: OutlineInputBorder(),
+                ),
+                onSubmitted: (_) => _sendLink(),
+              ),
+              const SizedBox(height: 18),
+              SizedBox(
+                height: 52,
+                child: FilledButton(
+                  onPressed: _isSending ? null : _sendLink,
+                  child: _isSending
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Enviar o reenviar enlace'),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'Cuando abras el enlace, SIT-PAY confirmará tu cuenta y te '
+                'devolverá a la aplicación. Si expiró o ya fue utilizado, '
+                'solicita un enlace nuevo.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
             if (_errorMessage != null) ...[
               const SizedBox(height: 16),
               _MessageBox(

@@ -17,6 +17,8 @@ class ApiConstants {
   static const String lookupDni = '/auth/lookup-dni';
   static const String registrationEmailRequest =
       '/auth/registration-email/request';
+  static const String registrationEmailSimulate =
+      '/auth/registration-email/simulate';
   static const String registrationEmailConfirmLink =
       '/auth/registration-email/confirm-link';
   static const String refresh = '/auth/refresh';

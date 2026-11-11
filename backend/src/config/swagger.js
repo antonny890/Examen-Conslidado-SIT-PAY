@@ -170,6 +170,31 @@ SIT-Pay no almacena dinero ni mantiene saldos. Los pagos de esta versión son si
         },
       },
     },
+    '/auth/registration-email/simulate': {
+      post: {
+        tags: ['Autenticación'],
+        summary: 'Completar la confirmación simulada (solo desarrollo)',
+        description: 'Disponible únicamente con NODE_ENV=development y REGISTRATION_EMAIL_DEMO_MODE=true.',
+        security: [],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['email'],
+                properties: { email: { type: 'string', format: 'email' } },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: 'Cuenta de demostración activada; devuelve el perfil y tokens' },
+          400: { description: 'No existe un registro pendiente para este correo' },
+          404: { description: 'La simulación no está habilitada' },
+        },
+      },
+    },
     '/auth/login': {
       post: {
         tags: ['Autenticación'],

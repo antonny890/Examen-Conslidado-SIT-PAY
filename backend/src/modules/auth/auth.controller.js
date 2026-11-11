@@ -744,6 +744,65 @@ const confirmRegistrationEmailLink = async (req, res, next) => {
   }
 };
 
+const simulateRegistrationEmailConfirmation = async (req, res, next) => {
+  if (
+    process.env.NODE_ENV !== 'development' ||
+    process.env.REGISTRATION_EMAIL_DEMO_MODE !== 'true'
+  ) {
+    return res.status(404).json({
+      success: false,
+      message: 'La confirmación simulada solo está disponible en modo de desarrollo.',
+    });
+  }
+
+  try {
+    const email = normalizeEmail(req.body?.email);
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Ingresa un correo electrónico válido.',
+      });
+    }
+
+    const user = await getUserByEmail(email);
+    if (
+      !user ||
+      user.rol_codigo !== 'PASAJERO' ||
+      user.email_verificado === true ||
+      user.estado !== 'ACTIVO' ||
+      user.deleted_at
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'No hay un registro de pasajero pendiente de confirmación.',
+      });
+    }
+
+    await auth.updateUser(user.id, { emailVerified: true });
+    await db.collection(COLLECTION).doc(user.id).update({
+      email_verificado: true,
+      email_verification_code_hash: null,
+      email_verification_expires_at: null,
+      email_verification_sent_at: null,
+      email_verification_attempts: 0,
+      ultimo_login_at: new Date(),
+      updated_at: new Date(),
+    });
+    const updatedUser = { ...user, email_verificado: true };
+
+    return res.json({
+      success: true,
+      message: 'Registro de demostración completado.',
+      data: {
+        usuario: await getSessionUser(updatedUser),
+        tokens: await issueSession(user.id),
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const forgotPassword = async (req, res, next) => {
   try {
     const email = normalizeEmail(req.body?.email);
@@ -830,4 +889,5 @@ module.exports = {
   requestRegistrationEmailLink,
   confirmRegistrationEmailLink,
   resetPassword,
+  simulateRegistrationEmailConfirmation,
 };

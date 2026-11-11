@@ -348,39 +348,14 @@ class AuthProvider extends ChangeNotifier {
         ),
       );
       if (response.statusCode != 200 || response.data['success'] != true) {
-        _errorMessage =
-            response.data['message'] ??
-                'No se pudo confirmar el correo. Solicita un enlace nuevo.';
+        _errorMessage = response.data['message'] ??
+            'No se pudo confirmar el correo. Solicita un enlace nuevo.';
         _isLoading = false;
         notifyListeners();
         return false;
       }
 
-      final data = response.data['data'] as Map<String, dynamic>;
-      final tokens = data['tokens'] as Map<String, dynamic>;
-      final userJson = data['usuario'] as Map<String, dynamic>;
-      final registeredUser = UserModel.fromJson(userJson);
-      final alias = _pendingRegistrationAlias;
-      _currentUser = await LocalProfileStore.applyTo(
-        registeredUser.copyWith(
-          alias: alias,
-          aliasUpdatedAt: alias.isEmpty ? null : DateTime.now(),
-        ),
-      );
-      if (alias.isNotEmpty) await LocalProfileStore.save(_currentUser!);
-
-      await SecureStorageService.saveTokens(
-        accessToken: tokens['accessToken'],
-        refreshToken: tokens['refreshToken'],
-      );
-      await SecureStorageService.saveUserRole(_currentUser!.rol);
-      await SecureStorageService.saveUserData(
-        jsonEncode(_currentUser!.toJson()),
-      );
-
-      _pendingRegistrationEmail = null;
-      _pendingRegistrationAlias = '';
-      await SecureStorageService.clearPendingRegistrationEmail();
+      await _saveRegistrationConfirmation(response.data['data']);
       _isLoading = false;
       notifyListeners();
       return true;
@@ -397,6 +372,65 @@ class AuthProvider extends ChangeNotifier {
     _isLoading = false;
     notifyListeners();
     return false;
+  }
+
+  Future<bool> simulateRegistrationEmailConfirmation(String email) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final response = await _apiClient.dio.post(
+        ApiConstants.registrationEmailSimulate,
+        data: {'email': email.trim().toLowerCase()},
+      );
+      if (response.statusCode != 200 || response.data['success'] != true) {
+        _errorMessage = response.data['message'] ??
+            'No se pudo completar la confirmación de demostración.';
+        return false;
+      }
+
+      await _saveRegistrationConfirmation(response.data['data']);
+      return true;
+    } on DioException catch (error) {
+      final responseData = error.response?.data;
+      _errorMessage = responseData is Map && responseData['message'] is String
+          ? responseData['message'] as String
+          : 'La simulación de confirmación no está habilitada en este servidor.';
+      return false;
+    } catch (error) {
+      _errorMessage =
+          'Ocurrió un error inesperado durante la simulación: $error';
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _saveRegistrationConfirmation(dynamic responseData) async {
+    final data = responseData as Map<String, dynamic>;
+    final tokens = data['tokens'] as Map<String, dynamic>;
+    final userJson = data['usuario'] as Map<String, dynamic>;
+    final registeredUser = UserModel.fromJson(userJson);
+    final alias = _pendingRegistrationAlias;
+    _currentUser = await LocalProfileStore.applyTo(
+      registeredUser.copyWith(
+        alias: alias,
+        aliasUpdatedAt: alias.isEmpty ? null : DateTime.now(),
+      ),
+    );
+    if (alias.isNotEmpty) await LocalProfileStore.save(_currentUser!);
+
+    await SecureStorageService.saveTokens(
+      accessToken: tokens['accessToken'] as String,
+      refreshToken: tokens['refreshToken'] as String,
+    );
+    await SecureStorageService.saveUserRole(_currentUser!.rol);
+    await SecureStorageService.saveUserData(jsonEncode(_currentUser!.toJson()));
+    _pendingRegistrationEmail = null;
+    _pendingRegistrationAlias = '';
+    await SecureStorageService.clearPendingRegistrationEmail();
   }
 
   Future<void> updateLocalProfile({
