@@ -355,7 +355,9 @@ class AuthProvider extends ChangeNotifier {
         return false;
       }
 
-      await _saveRegistrationConfirmation(response.data['data']);
+      _pendingRegistrationEmail = null;
+      _pendingRegistrationAlias = '';
+      await SecureStorageService.clearPendingRegistrationEmail();
       _isLoading = false;
       notifyListeners();
       return true;

@@ -744,7 +744,6 @@ const confirmRegistrationEmailLink = async (req, res, next) => {
       email_verification_expires_at: null,
       email_verification_sent_at: null,
       email_verification_attempts: 0,
-      ultimo_login_at: new Date(),
       updated_at: new Date(),
     });
     const updatedUser = { ...user, email_verificado: true };
@@ -753,7 +752,6 @@ const confirmRegistrationEmailLink = async (req, res, next) => {
       message: 'Correo confirmado. Tu cuenta está activa.',
       data: {
         usuario: await getSessionUser(updatedUser),
-        tokens: await issueSession(user.id),
       },
     });
   } catch (error) {

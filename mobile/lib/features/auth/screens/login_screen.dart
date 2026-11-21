@@ -11,7 +11,9 @@ import '../models/google_sign_in_result.dart';
 /// Pantalla de Inicio de Sesión Unificada (Pasajero y Chofer)
 /// Tras el login, redirige automáticamente a la vista correspondiente según el rol.
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({super.key, this.initialMessage});
+
+  final String? initialMessage;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -23,6 +25,23 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
   bool _isSigningInWithGoogle = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final message = widget.initialMessage;
+    if (message != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: Colors.green.shade700,
+          ),
+        );
+      });
+    }
+  }
 
   @override
   void dispose() {

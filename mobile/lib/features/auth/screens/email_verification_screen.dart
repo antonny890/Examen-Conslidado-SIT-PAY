@@ -272,9 +272,9 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
               ),
               const SizedBox(height: 14),
               Text(
-                'Cuando abras el enlace, SIT-PAY confirmará tu cuenta y te '
-                'devolverá a la aplicación. Si expiró o ya fue utilizado, '
-                'solicita un enlace nuevo.',
+                'Después de confirmar el correo, vuelve a SIT-PAY e inicia '
+                'sesión. Si el enlace expiró o ya fue utilizado, solicita '
+                'uno nuevo.',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,

@@ -10,7 +10,7 @@ import 'features/passenger/providers/payment_provider.dart';
 import 'features/driver/providers/driver_socket_provider.dart';
 import 'features/auth/screens/splash_screen.dart';
 import 'features/auth/screens/email_verification_screen.dart';
-import 'features/passenger/screens/passenger_home_screen.dart';
+import 'features/auth/screens/login_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -68,8 +68,8 @@ class _SitPayMobileAppState extends State<SitPayMobileApp> {
       }
     }
 
-    final errorCode = (parameters['error_code'] ?? parameters['error'] ?? '')
-        .toLowerCase();
+    final errorCode =
+        (parameters['error_code'] ?? parameters['error'] ?? '').toLowerCase();
     final errorDescription =
         (parameters['error_description'] ?? '').toLowerCase();
     if (errorCode.isNotEmpty || errorDescription.isNotEmpty) {
@@ -103,7 +103,12 @@ class _SitPayMobileAppState extends State<SitPayMobileApp> {
 
     if (confirmed) {
       _navigatorKey.currentState?.pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const PassengerHomeScreen()),
+        MaterialPageRoute(
+          builder: (_) => const LoginScreen(
+            initialMessage:
+                'Correo confirmado. Tu registro está completo; inicia sesión.',
+          ),
+        ),
         (_) => false,
       );
     } else {
