@@ -654,7 +654,16 @@ const requestRegistrationEmailLink = async (req, res, next) => {
       : user.email_verification_sent_at
         ? new Date(user.email_verification_sent_at)
         : null;
-    const elapsed = sentAt ? Math.floor((now.getTime() - sentAt.getTime()) / 1000) : 60;
+    const attemptedAt = user.email_verification_request_attempted_at?.toDate
+      ? user.email_verification_request_attempted_at.toDate()
+      : user.email_verification_request_attempted_at
+        ? new Date(user.email_verification_request_attempted_at)
+        : null;
+    const lastRequestAt =
+      attemptedAt && (!sentAt || attemptedAt > sentAt) ? attemptedAt : sentAt;
+    const elapsed = lastRequestAt
+      ? Math.floor((now.getTime() - lastRequestAt.getTime()) / 1000)
+      : 60;
     if (elapsed < 60) {
       return res.status(429).json({
         success: false,
@@ -662,7 +671,29 @@ const requestRegistrationEmailLink = async (req, res, next) => {
         retryAfterSeconds: 60 - elapsed,
       });
     }
-    await supabaseAuth.requestSignupEmailLink(email);
+    await db.collection(COLLECTION).doc(user.id).update({
+      email_verification_request_attempted_at: now,
+      updated_at: now,
+    });
+    try {
+      await supabaseAuth.requestSignupEmailLink(email);
+    } catch (error) {
+      const errorCode = String(error.code || '').toLowerCase();
+      const errorMessage = String(error.message || '').toLowerCase();
+      if (
+        error.statusCode === 429 ||
+        errorCode.includes('rate_limit') ||
+        errorMessage.includes('rate limit')
+      ) {
+        return res.status(429).json({
+          success: false,
+          code: 'EMAIL_RATE_LIMIT',
+          message:
+            'Supabase alcanzó el límite temporal de correos. Espera antes de volver a intentarlo; configura SMTP propio en Supabase para evitar el límite del correo de prueba.',
+        });
+      }
+      throw error;
+    }
     await db.collection(COLLECTION).doc(user.id).update({
       email_verification_code_hash: null,
       email_verification_expires_at: null,
