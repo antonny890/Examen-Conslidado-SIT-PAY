@@ -363,6 +363,23 @@ const login = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'La cuenta no tiene un perfil activo en SIT-PAY.' });
     }
     const user = { id: userSnapshot.id, ...userSnapshot.data() };
+    if (
+      user.rol_codigo === 'PASAJERO' &&
+      user.estado === 'ACTIVO' &&
+      !user.deleted_at &&
+      user.email_verificado !== true &&
+      tokenResult.emailVerified === true
+    ) {
+      await db.collection(COLLECTION).doc(user.id).update({
+        email_verificado: true,
+        email_verification_code_hash: null,
+        email_verification_expires_at: null,
+        email_verification_sent_at: null,
+        email_verification_attempts: 0,
+        updated_at: new Date(),
+      });
+      user.email_verificado = true;
+    }
     if (user.estado !== 'ACTIVO' || user.deleted_at) {
       return res.status(403).json({ success: false, message: 'La cuenta se encuentra inactiva o suspendida.' });
     }
