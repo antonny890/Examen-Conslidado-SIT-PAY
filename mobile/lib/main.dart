@@ -132,6 +132,45 @@ class _SitPayMobileAppState extends State<SitPayMobileApp> {
     );
   }
 
+  Route<dynamic>? _handleFlutterLinkRoute(RouteSettings settings) {
+    final routeName = settings.name;
+    if (routeName == null) return null;
+
+    final uri = Uri.tryParse(routeName);
+    final fragment = uri?.fragment;
+    if (fragment == null || !fragment.contains('error')) return null;
+
+    try {
+      final parameters = Uri.splitQueryString(fragment);
+      final errorCode =
+          (parameters['error_code'] ?? parameters['error'] ?? '').toLowerCase();
+      final errorDescription =
+          (parameters['error_description'] ?? '').toLowerCase();
+      final expiredOrInvalid = errorCode.contains('expired') ||
+          errorCode.contains('invalid') ||
+          errorDescription.contains('expired') ||
+          errorDescription.contains('invalid');
+
+      return MaterialPageRoute<void>(
+        settings: settings,
+        builder: (_) => EmailVerificationScreen(
+          email: _authProvider.pendingRegistrationEmail ?? '',
+          initialErrorMessage: expiredOrInvalid
+              ? 'El enlace expiró o ya fue utilizado. Solicita uno nuevo y ábrelo pronto.'
+              : 'No se pudo confirmar el correo. Solicita un enlace nuevo.',
+        ),
+      );
+    } on FormatException {
+      return MaterialPageRoute<void>(
+        settings: settings,
+        builder: (_) => EmailVerificationScreen(
+          email: _authProvider.pendingRegistrationEmail ?? '',
+          initialErrorMessage: 'No se pudo leer el enlace. Solicita uno nuevo.',
+        ),
+      );
+    }
+  }
+
   @override
   void dispose() {
     _linkSubscription?.cancel();
@@ -156,6 +195,7 @@ class _SitPayMobileAppState extends State<SitPayMobileApp> {
           theme: AppTheme.lightTheme,
           darkTheme: AppTheme.darkTheme,
           themeMode: themeModeProvider.themeMode,
+          onGenerateRoute: _handleFlutterLinkRoute,
           home: const SplashScreen(),
         ),
       ),

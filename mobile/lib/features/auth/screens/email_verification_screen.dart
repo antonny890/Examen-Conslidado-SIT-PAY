@@ -175,7 +175,9 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
             ),
             const SizedBox(height: 22),
             Text(
-              'Revisa tu correo',
+              widget.initialErrorMessage == null
+                  ? 'Revisa tu correo'
+                  : 'No se pudo confirmar el correo',
               textAlign: TextAlign.center,
               style: theme.textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.w800,
@@ -238,8 +240,11 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
               ],
             ] else ...[
               Text(
-                'Te enviaremos un enlace. Ábrelo para confirmar tu cuenta; '
-                'no necesitas ingresar ningún código.',
+                widget.initialErrorMessage == null
+                    ? 'Te enviaremos un enlace. Ábrelo para confirmar tu cuenta; '
+                        'no necesitas ingresar ningún código.'
+                    : 'El enlace venció o ya fue utilizado. Solicita uno nuevo '
+                        'y ábrelo pronto para confirmar tu cuenta.',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodyMedium,
               ),
