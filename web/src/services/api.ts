@@ -5,9 +5,7 @@ import axios, { InternalAxiosRequestConfig } from 'axios';
 
 const DEFAULT_API_BASE_URL = 'https://sit-pay-backend.onrender.com/api/v1';
 const API_BASE_URL = (
-  import.meta.env.PROD
-    ? DEFAULT_API_BASE_URL
-    : import.meta.env.VITE_API_URL?.trim() || DEFAULT_API_BASE_URL
+  import.meta.env.VITE_API_URL?.trim() || DEFAULT_API_BASE_URL
 ).replace(/\/+$/, '');
 type RetryConfig = InternalAxiosRequestConfig & { _sitPayRetry?: boolean };
 let refreshInProgress: Promise<string | null> | null = null;

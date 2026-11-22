@@ -136,13 +136,15 @@ const verifyAccessToken = async (token) => {
   const { data, error } = await supabaseAdmin.auth.getUser(token);
   if (error || !data.user) throwAuthError(error || new Error('Usuario del token no encontrado.'));
   const claims = decodeClaims(token);
-  if (claims.sub !== data.user.id || !Number.isInteger(claims.auth_time)) {
+  const authTime = Number.isInteger(claims.auth_time) ? claims.auth_time : claims.iat;
+  if (claims.sub !== data.user.id || !Number.isInteger(authTime)) {
     const invalidToken = new Error('El token de acceso no contiene las declaraciones esperadas.');
     invalidToken.statusCode = 401;
     throw invalidToken;
   }
   return {
     ...claims,
+    auth_time: authTime,
     uid: data.user.id,
     email: data.user.email,
     email_verified: Boolean(data.user.email_confirmed_at),
