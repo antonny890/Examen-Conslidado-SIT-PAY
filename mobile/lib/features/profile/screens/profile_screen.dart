@@ -691,7 +691,8 @@ class _ManageProfileScreenState extends State<_ManageProfileScreen> {
             validator: AliasRules.validate,
             decoration: const InputDecoration(
               labelText: 'Alias',
-              helperText: 'Opcional. Letras y números, sin espacios.',
+              helperText:
+                  '5-16 caracteres, inicia con letra, solo A-Z/números y sin alias ofensivos.',
             ),
           ),
         ),
@@ -703,7 +704,7 @@ class _ManageProfileScreenState extends State<_ManageProfileScreen> {
           FilledButton(
             onPressed: () {
               if (formKey.currentState!.validate()) {
-                Navigator.pop(context, controller.text.trim());
+                Navigator.pop(context, controller.text);
               }
             },
             child: const Text('Guardar'),
@@ -713,20 +714,21 @@ class _ManageProfileScreenState extends State<_ManageProfileScreen> {
     );
     controller.dispose();
 
-    if (alias == null || alias == user.alias || !mounted) return;
+    if (alias == null || !mounted) return;
     try {
-      await context.read<AuthProvider>().updateLocalProfile(
-            alias: alias,
-            aliasUpdatedAt: DateTime.now(),
-          );
+      await context.read<AuthProvider>().updateAlias(alias);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Alias guardado en este dispositivo.')),
+        const SnackBar(content: Text('Alias guardado en tu cuenta.')),
       );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No se pudo guardar el alias: $error')),
+        SnackBar(
+          content: Text(
+            'No se pudo guardar el alias: ${error.toString().replaceFirst('Bad state: ', '')}',
+          ),
+        ),
       );
     }
   }
@@ -805,7 +807,7 @@ class _ManageProfileScreenState extends State<_ManageProfileScreen> {
               ],
               footer: Text(
                 canChangeAlias
-                    ? 'Puedes cambiarlo cada 15 días. Usa letras y números, sin espacios ni símbolos.'
+                    ? 'Puedes cambiarlo cada 15 días. Usa 5-16 caracteres, empieza con letra y solo A-Z/números.'
                     : 'Podrás cambiarlo el ${DateFormat('dd/MM/yyyy').format(nextAliasChange!)}.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
@@ -822,8 +824,8 @@ class _ManageProfileScreenState extends State<_ManageProfileScreen> {
           const SizedBox(height: 8),
           Text(
             user.esChofer
-                ? 'Tu unidad es asignada por el administrador. La foto se guarda en este dispositivo.'
-                : 'La foto y el alias se guardan en este dispositivo.',
+                ? 'Tu unidad es asignada por el administrador. La foto se guarda en tu cuenta.'
+                : 'La foto y el alias se guardan en tu cuenta.',
             style: Theme.of(context).textTheme.bodySmall,
             textAlign: TextAlign.center,
           ),

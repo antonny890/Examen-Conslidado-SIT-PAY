@@ -169,6 +169,7 @@ class DriverSocketProvider extends ChangeNotifier {
     // Agregar a lista de histórico del turno
     _turnHistory.insert(0, {
       'nombre': pasajeroNombre,
+      'alias': alias is String ? alias.trim() : '',
       'hora': hora,
       'simulado': isSimulated ? 'true' : 'false',
     });

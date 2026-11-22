@@ -1,8 +1,15 @@
 const crypto = require('node:crypto');
 const { OAuth2Client } = require('google-auth-library');
 const { auth } = require('../../services/supabaseAuthService');
-const { db, getDocument, queryCollection } = require('../../services/postgresData');
+const {
+  db,
+  getDocument,
+  queryCollection,
+  timestampToDate,
+} = require('../../services/postgresData');
 const supabaseAuth = require('../../services/supabaseAuthService');
+const { findAliasOwner } = require('../../services/aliasService');
+const { validateAlias } = require('../../utils/aliasRules');
 const {
   createUserAccount,
   deleteUserAccount,
@@ -184,6 +191,8 @@ const getSessionUser = async (user, picture = null) => {
     nombres: profile?.nombres || '',
     apellidos: profile?.apellidos || '',
     fotoUrl: profile?.foto_url || picture || null,
+    alias: profile?.alias || '',
+    aliasUpdatedAt: timestampToDate(profile?.alias_updated_at)?.toISOString() || null,
     empresaId: company?.id || null,
     empresaNombre: company?.nombre_comercial || null,
     empresaActiva: company?.activo ?? null,
@@ -214,6 +223,7 @@ const registerPassenger = async (req, res, next) => {
       tipoDocumento,
       numeroDocumento,
       telefono,
+      alias: requestedAlias,
       consentimientoDatos,
       consentimientoConsultaDni,
     } = req.body || {};
@@ -222,6 +232,8 @@ const registerPassenger = async (req, res, next) => {
     const submittedNames = typeof nombres === 'string' ? nombres.trim() : '';
     const submittedSurnames = typeof apellidos === 'string' ? apellidos.trim() : '';
     const phone = typeof telefono === 'string' ? telefono.trim() : '';
+    const alias = typeof requestedAlias === 'string' ? requestedAlias : '';
+    const aliasError = validateAlias(alias);
 
     if (!normalizedEmail || typeof password !== 'string' || !submittedNames || !submittedSurnames || !dni) {
       return res.status(400).json({ success: false, message: 'Todos los campos obligatorios deben ser completados.' });
@@ -242,10 +254,25 @@ const registerPassenger = async (req, res, next) => {
     if (consentimientoDatos !== true || consentimientoConsultaDni !== true) {
       return res.status(400).json({ success: false, message: 'Debes aceptar el tratamiento de datos y autorizar la consulta DNI.' });
     }
+    if (requestedAlias !== undefined && typeof requestedAlias !== 'string') {
+      return res.status(400).json({ success: false, message: 'El alias debe ser texto.' });
+    }
+    if (aliasError) return res.status(400).json({ success: false, message: aliasError });
 
     const existing = await getUserByEmail(normalizedEmail);
     if (existing) {
       if (existing.rol_codigo === 'PASAJERO' && existing.email_verificado !== true) {
+        const existingProfile = await getProfile(existing.id);
+        if (alias && !existingProfile?.alias) {
+          if (await findAliasOwner(alias, existing.id)) {
+            return res.status(409).json({ success: false, message: 'Ese alias ya está registrado. Elige otro.' });
+          }
+          await db.collection(PROFILES).doc(existing.id).update({
+            alias,
+            alias_updated_at: new Date(),
+            updated_at: new Date(),
+          });
+        }
         return res.status(201).json({
           success: true,
           message: 'Hay un registro pendiente. Continúa con la verificación.',
@@ -253,6 +280,10 @@ const registerPassenger = async (req, res, next) => {
         });
       }
       return res.status(409).json({ success: false, message: 'El correo electrónico ya se encuentra registrado.' });
+    }
+
+    if (alias && await findAliasOwner(alias)) {
+      return res.status(409).json({ success: false, message: 'Ese alias ya está registrado. Elige otro.' });
     }
 
     const registeredProfiles = await queryCollection(
@@ -297,6 +328,8 @@ const registerPassenger = async (req, res, next) => {
           tipo_documento: 'DNI',
           numero_documento: dni,
           telefono: phone || null,
+          alias: alias || null,
+          alias_updated_at: alias ? new Date() : null,
           consentimiento_datos: true,
           fecha_consentimiento: new Date(),
           consentimiento_consulta_dni: true,
@@ -326,6 +359,10 @@ const registerPassenger = async (req, res, next) => {
   } catch (error) {
     if (error.code === 'DNI_ALREADY_REGISTERED') {
       return res.status(409).json({ success: false, message: 'Este DNI ya está registrado en SIT-PAY.' });
+    }
+    if (error.code === 'ALIAS_ALREADY_EXISTS' ||
+        (error.code === '23505' && error.constraint === 'perfiles_alias_lower_unique')) {
+      return res.status(409).json({ success: false, message: 'Ese alias ya está registrado. Elige otro.' });
     }
     if (error.code === 'auth/email-already-exists' || error.code === 'EMAIL_ALREADY_REGISTERED') {
       return res.status(409).json({ success: false, message: 'El correo electrónico ya se encuentra registrado.' });
@@ -504,10 +541,11 @@ const googlePassengerAuth = async (req, res, next) => {
       nombres,
       apellidos,
       telefono,
+      alias: requestedAlias,
       consentimientoDatos,
       consentimientoConsultaDni,
     } = req.body;
-    if (!numeroDocumento && !nombres && !apellidos && !telefono &&
+    if (!numeroDocumento && !nombres && !apellidos && !telefono && !requestedAlias &&
         consentimientoDatos === undefined && consentimientoConsultaDni === undefined) {
       return res.json({
         success: true,
@@ -518,14 +556,23 @@ const googlePassengerAuth = async (req, res, next) => {
     const submittedNames = typeof nombres === 'string' ? nombres.trim() : '';
     const submittedSurnames = typeof apellidos === 'string' ? apellidos.trim() : '';
     const phone = typeof telefono === 'string' ? telefono.trim() : '';
+    const alias = typeof requestedAlias === 'string' ? requestedAlias : '';
     if (!/^\d{8}$/.test(dni)) {
       return res.status(400).json({ success: false, message: 'Ingresa un DNI válido de 8 dígitos.' });
     }
+    if (requestedAlias !== undefined && typeof requestedAlias !== 'string') {
+      return res.status(400).json({ success: false, message: 'El alias debe ser texto.' });
+    }
+    const aliasError = validateAlias(alias);
+    if (aliasError) return res.status(400).json({ success: false, message: aliasError });
     if (consentimientoDatos !== true || consentimientoConsultaDni !== true) {
       return res.status(400).json({ success: false, message: 'Debes aceptar el tratamiento de datos y autorizar la consulta DNI.' });
     }
     if (phone && !/^\+?[0-9\s()-]{6,20}$/.test(phone)) {
       return res.status(400).json({ success: false, message: 'Ingresa un número de celular válido.' });
+    }
+    if (alias && await findAliasOwner(alias)) {
+      return res.status(409).json({ success: false, message: 'Ese alias ya está registrado. Elige otro.' });
     }
 
     const registeredProfiles = await queryCollection(
@@ -565,6 +612,8 @@ const googlePassengerAuth = async (req, res, next) => {
           tipo_documento: 'DNI',
           numero_documento: dni,
           telefono: phone || null,
+          alias: alias || null,
+          alias_updated_at: alias ? new Date() : null,
           foto_url: googleAccount.picture || null,
           consentimiento_datos: true,
           fecha_consentimiento: new Date(),
@@ -598,6 +647,10 @@ const googlePassengerAuth = async (req, res, next) => {
   } catch (error) {
     if (error.code === 'DNI_ALREADY_REGISTERED') {
       return res.status(409).json({ success: false, message: 'Este DNI ya está registrado en SIT-PAY.' });
+    }
+    if (error.code === 'ALIAS_ALREADY_EXISTS' ||
+        (error.code === '23505' && error.constraint === 'perfiles_alias_lower_unique')) {
+      return res.status(409).json({ success: false, message: 'Ese alias ya está registrado. Elige otro.' });
     }
     if (error.code === 'auth/email-already-exists' || error.code === 'EMAIL_ALREADY_REGISTERED') {
       return res.status(409).json({ success: false, message: 'El correo electrónico ya se encuentra registrado.' });

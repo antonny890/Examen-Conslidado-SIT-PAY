@@ -10,6 +10,8 @@ router.use(authenticateAccessToken);
 
 router.get('/', profileController.getProfile);
 router.put('/', profileController.updateProfile);
+router.put('/alias', profileController.updateAlias);
+router.post('/alias-reports', profileController.createAliasReport);
 router.put('/photo', profileController.updateProfilePhoto);
 router.put('/change-password', profileController.changePassword);
 router.post('/consent', profileController.registerConsent);

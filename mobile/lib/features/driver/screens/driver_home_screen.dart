@@ -21,6 +21,66 @@ class DriverHomeScreen extends StatefulWidget {
 }
 
 class _DriverHomeScreenState extends State<DriverHomeScreen> {
+  Future<void> _reportAlias(String alias) async {
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('Denunciar alias'),
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+            child: Text('Selecciona el motivo para "$alias".'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancelar'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(dialogContext, 'INSULTO'),
+            child: const Text('Insulto o vulgaridad'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(dialogContext, 'DISCURSO_DE_ODIO'),
+            child: const Text('Discurso de odio'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(dialogContext, 'SPAM'),
+            child: const Text('Spam'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(dialogContext, 'SUPLANTACION'),
+            child: const Text('Suplantación'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(dialogContext, 'OTRO'),
+            child: const Text('Otro motivo'),
+          ),
+        ],
+      ),
+    );
+    if (reason == null || !mounted) return;
+
+    try {
+      await context.read<AuthProvider>().reportAlias(
+            alias: alias,
+            reason: reason,
+          );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Denuncia enviada para revisión.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'No se pudo enviar la denuncia: ${error.toString().replaceFirst('Bad state: ', '')}',
+          ),
+        ),
+      );
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -414,24 +474,31 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                                         mainAxisAlignment:
                                             MainAxisAlignment.spaceBetween,
                                         children: [
-                                          Row(
-                                            children: [
-                                              const Icon(
-                                                  Icons.check_circle_rounded,
-                                                  color: Color(0xFF10B981),
-                                                  size: 18),
-                                              const SizedBox(width: 8),
-                                              Text(
-                                                item['simulado'] == 'true'
-                                                    ? '${item['nombre']} simuló el pago'
-                                                    : '${item['nombre']} realizó el pago',
-                                                style: TextStyle(
-                                                  color: primaryTextColor,
-                                                  fontWeight: FontWeight.w600,
-                                                  fontSize: 14,
+                                          Expanded(
+                                            child: Row(
+                                              children: [
+                                                const Icon(
+                                                    Icons.check_circle_rounded,
+                                                    color: Color(0xFF10B981),
+                                                    size: 18),
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: Text(
+                                                    item['simulado'] == 'true'
+                                                        ? '${item['nombre']} simuló el pago'
+                                                        : '${item['nombre']} realizó el pago',
+                                                    style: TextStyle(
+                                                      color: primaryTextColor,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      fontSize: 14,
+                                                    ),
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
                                                 ),
-                                              ),
-                                            ],
+                                              ],
+                                            ),
                                           ),
                                           Text(
                                             item['hora'] ?? '',
@@ -441,6 +508,19 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                                               fontFamily: 'monospace',
                                             ),
                                           ),
+                                          if (!auth.isDemoMode &&
+                                              (item['alias'] ?? '').isNotEmpty)
+                                            IconButton(
+                                              tooltip: 'Denunciar alias',
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                              onPressed: () =>
+                                                  _reportAlias(item['alias']!),
+                                              icon: const Icon(
+                                                Icons.flag_outlined,
+                                                size: 18,
+                                              ),
+                                            ),
                                         ],
                                       );
                                     },

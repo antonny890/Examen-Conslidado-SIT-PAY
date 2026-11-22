@@ -92,7 +92,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               telefono: _telefonoController.text.trim().isEmpty
                   ? null
                   : _telefonoController.text.trim(),
-              alias: _aliasController.text.trim(),
+              alias: _aliasController.text,
               consentimientoDatos: _consentimientoDatos,
               consentimientoConsultaDni: _consentimientoConsultaDni,
             ),
@@ -108,7 +108,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       password: _passwordController.text,
       nombres: _nombresController.text,
       apellidos: _apellidosController.text,
-      alias: _aliasController.text.trim(),
+      alias: _aliasController.text,
       numeroDocumento: _dniController.text,
       telefono: _telefonoController.text,
       consentimientoDatos: _consentimientoDatos,
@@ -321,17 +321,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 TextFormField(
                   controller: _aliasController,
                   textCapitalization: TextCapitalization.none,
-                  maxLength: 20,
+                  maxLength: 16,
                   inputFormatters: [
                     FilteringTextInputFormatter.allow(
-                      RegExp(r'[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9]'),
+                      RegExp(r'[A-Za-z0-9]'),
                     ),
                   ],
                   decoration: const InputDecoration(
                     labelText: 'Alias (opcional)',
                     prefixIcon: Icon(Icons.alternate_email),
                     helperText:
-                        '3 a 20 letras o números, sin espacios ni símbolos.',
+                        '5-16 caracteres, inicia con letra, sin tildes ni símbolos. No duplicados ni ofensivos.',
                     counterText: '',
                   ),
                   validator: AliasRules.validate,

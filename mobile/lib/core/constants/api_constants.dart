@@ -28,6 +28,8 @@ class ApiConstants {
 
   // Perfil
   static const String profile = '/profile';
+  static const String updateAlias = '/profile/alias';
+  static const String aliasReports = '/profile/alias-reports';
   static const String changePassword = '/profile/change-password';
   static const String consent = '/profile/consent';
 

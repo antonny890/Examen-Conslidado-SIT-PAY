@@ -19,5 +19,7 @@ router.get('/users', adminController.getAdministrators);
 router.post('/users', adminController.createAdministrator);
 router.get('/audit-logs', adminController.getAuditLogs);
 router.put('/users/:id/status', adminController.toggleUserStatus);
+router.get('/alias-reports', adminController.getAliasReports);
+router.put('/alias-reports/:id', adminController.reviewAliasReport);
 
 module.exports = router;

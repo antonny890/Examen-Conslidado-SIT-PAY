@@ -71,8 +71,11 @@ const createUserAccount = async ({
   } catch (error) {
     await auth.deleteUser(authUser.uid);
     if (error.code === '23505') {
-      const conflict = new Error('EMAIL_ALREADY_REGISTERED');
-      conflict.code = 'EMAIL_ALREADY_REGISTERED';
+      const code = error.constraint === 'perfiles_alias_lower_unique'
+        ? 'ALIAS_ALREADY_EXISTS'
+        : 'EMAIL_ALREADY_REGISTERED';
+      const conflict = new Error(code);
+      conflict.code = code;
       throw conflict;
     }
     throw error;

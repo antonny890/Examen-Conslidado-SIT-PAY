@@ -36,6 +36,7 @@ class UserModel {
   UserModel copyWith({
     String? alias,
     DateTime? aliasUpdatedAt,
+    bool clearAliasUpdatedAt = false,
     String? profileImagePath,
     String? fotoUrl,
   }) {
@@ -47,7 +48,9 @@ class UserModel {
       apellidos: apellidos,
       fotoUrl: fotoUrl ?? this.fotoUrl,
       alias: alias ?? this.alias,
-      aliasUpdatedAt: aliasUpdatedAt ?? this.aliasUpdatedAt,
+      aliasUpdatedAt: clearAliasUpdatedAt
+          ? null
+          : aliasUpdatedAt ?? this.aliasUpdatedAt,
       profileImagePath: profileImagePath ?? this.profileImagePath,
       choferInfo: choferInfo,
       googleConnected: googleConnected,

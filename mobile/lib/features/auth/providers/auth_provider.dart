@@ -19,7 +19,6 @@ class AuthProvider extends ChangeNotifier {
   bool _isDemoMode = false;
   String? _errorMessage;
   String? _pendingRegistrationEmail;
-  String _pendingRegistrationAlias = '';
 
   UserModel? get currentUser => _currentUser;
   bool get isLoading => _isLoading;
@@ -68,7 +67,6 @@ class AuthProvider extends ChangeNotifier {
     _isDemoMode = false;
     _errorMessage = null;
     _pendingRegistrationEmail = null;
-    _pendingRegistrationAlias = '';
     notifyListeners();
 
     try {
@@ -174,7 +172,7 @@ class AuthProvider extends ChangeNotifier {
         return false;
       }
       final data = response.data['data'] as Map<String, dynamic>;
-      await _saveAuthenticatedSession(data, alias: registration.alias);
+      await _saveAuthenticatedSession(data);
       return true;
     } on DioException catch (error) {
       final responseData = error.response?.data;
@@ -191,17 +189,11 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> _saveAuthenticatedSession(
-    Map<String, dynamic> data, {
-    String alias = '',
-  }) async {
+  Future<void> _saveAuthenticatedSession(Map<String, dynamic> data) async {
     final tokens = data['tokens'] as Map<String, dynamic>;
     final userJson = data['usuario'] as Map<String, dynamic>;
-    final user = UserModel.fromJson(userJson);
-    final registeredUser = alias.isEmpty
-        ? user
-        : user.copyWith(alias: alias, aliasUpdatedAt: DateTime.now());
-    _currentUser = await LocalProfileStore.applyTo(registeredUser);
+    _currentUser =
+        await LocalProfileStore.applyTo(UserModel.fromJson(userJson));
 
     await SecureStorageService.saveTokens(
       accessToken: tokens['accessToken'] as String,
@@ -209,13 +201,11 @@ class AuthProvider extends ChangeNotifier {
     );
     await SecureStorageService.saveUserRole(_currentUser!.rol);
     await SecureStorageService.saveUserData(jsonEncode(_currentUser!.toJson()));
-    if (alias.isNotEmpty) await LocalProfileStore.save(_currentUser!);
   }
 
   void loginDemo({required bool asDriver}) {
     _errorMessage = null;
     _pendingRegistrationEmail = null;
-    _pendingRegistrationAlias = '';
     _isDemoMode = true;
     _currentUser = UserModel(
       id: asDriver ? 'demo-driver' : 'demo-passenger',
@@ -255,7 +245,6 @@ class AuthProvider extends ChangeNotifier {
     _isLoading = true;
     _errorMessage = null;
     _pendingRegistrationEmail = null;
-    _pendingRegistrationAlias = '';
     notifyListeners();
 
     try {
@@ -269,6 +258,7 @@ class AuthProvider extends ChangeNotifier {
           'tipoDocumento': 'DNI',
           'numeroDocumento': numeroDocumento.trim(),
           'telefono': telefono?.trim(),
+          'alias': alias,
           'consentimientoDatos': consentimientoDatos,
           'consentimientoConsultaDni': consentimientoConsultaDni,
         },
@@ -276,7 +266,6 @@ class AuthProvider extends ChangeNotifier {
 
       if (response.statusCode == 201 && response.data['success'] == true) {
         _pendingRegistrationEmail = email.trim().toLowerCase();
-        _pendingRegistrationAlias = alias.trim();
         await SecureStorageService.savePendingRegistrationEmail(
           _pendingRegistrationEmail!,
         );
@@ -358,7 +347,6 @@ class AuthProvider extends ChangeNotifier {
       }
 
       _pendingRegistrationEmail = null;
-      _pendingRegistrationAlias = '';
       await SecureStorageService.clearPendingRegistrationEmail();
       _isLoading = false;
       notifyListeners();
@@ -416,15 +404,8 @@ class AuthProvider extends ChangeNotifier {
     final data = responseData as Map<String, dynamic>;
     final tokens = data['tokens'] as Map<String, dynamic>;
     final userJson = data['usuario'] as Map<String, dynamic>;
-    final registeredUser = UserModel.fromJson(userJson);
-    final alias = _pendingRegistrationAlias;
-    _currentUser = await LocalProfileStore.applyTo(
-      registeredUser.copyWith(
-        alias: alias,
-        aliasUpdatedAt: alias.isEmpty ? null : DateTime.now(),
-      ),
-    );
-    if (alias.isNotEmpty) await LocalProfileStore.save(_currentUser!);
+    _currentUser =
+        await LocalProfileStore.applyTo(UserModel.fromJson(userJson));
 
     await SecureStorageService.saveTokens(
       accessToken: tokens['accessToken'] as String,
@@ -433,13 +414,10 @@ class AuthProvider extends ChangeNotifier {
     await SecureStorageService.saveUserRole(_currentUser!.rol);
     await SecureStorageService.saveUserData(jsonEncode(_currentUser!.toJson()));
     _pendingRegistrationEmail = null;
-    _pendingRegistrationAlias = '';
     await SecureStorageService.clearPendingRegistrationEmail();
   }
 
   Future<void> updateLocalProfile({
-    String? alias,
-    DateTime? aliasUpdatedAt,
     String? profileImagePath,
     String? fotoUrl,
   }) async {
@@ -449,8 +427,6 @@ class AuthProvider extends ChangeNotifier {
     }
 
     final updatedUser = currentUser.copyWith(
-      alias: alias,
-      aliasUpdatedAt: aliasUpdatedAt,
       profileImagePath: profileImagePath,
       fotoUrl: fotoUrl,
     );
@@ -458,6 +434,79 @@ class AuthProvider extends ChangeNotifier {
     await SecureStorageService.saveUserData(jsonEncode(updatedUser.toJson()));
     _currentUser = updatedUser;
     notifyListeners();
+  }
+
+  Future<void> updateAlias(String alias) async {
+    final currentUser = _currentUser;
+    if (currentUser == null) {
+      throw StateError('No hay una sesión activa para editar el alias.');
+    }
+
+    late final Response<dynamic> response;
+    try {
+      response = await _apiClient.dio.put(
+        ApiConstants.updateAlias,
+        data: {'alias': alias},
+      );
+    } on DioException catch (error) {
+      final responseData = error.response?.data;
+      final message = responseData is Map && responseData['message'] is String
+          ? responseData['message'] as String
+          : 'No se pudo guardar el alias en el servidor.';
+      throw StateError(message);
+    }
+
+    final responseData = response.data;
+    if (responseData is! Map ||
+        responseData['success'] != true ||
+        responseData['data'] is! Map) {
+      throw StateError(
+        responseData is Map && responseData['message'] is String
+            ? responseData['message'] as String
+            : 'No se pudo guardar el alias en el servidor.',
+      );
+    }
+
+    final aliasData = responseData['data'] as Map;
+    final savedAlias = aliasData['alias'] is String
+        ? aliasData['alias'] as String
+        : alias;
+    final aliasUpdatedAt = aliasData['aliasUpdatedAt'] is String
+        ? DateTime.tryParse(aliasData['aliasUpdatedAt'] as String)
+        : null;
+    final updatedUser = currentUser.copyWith(
+      alias: savedAlias,
+      aliasUpdatedAt: aliasUpdatedAt,
+      clearAliasUpdatedAt: aliasUpdatedAt == null && savedAlias.isEmpty,
+    );
+    await LocalProfileStore.save(updatedUser);
+    await SecureStorageService.saveUserData(jsonEncode(updatedUser.toJson()));
+    _currentUser = updatedUser;
+    notifyListeners();
+  }
+
+  Future<void> reportAlias({
+    required String alias,
+    required String reason,
+  }) async {
+    try {
+      final response = await _apiClient.dio.post(
+        ApiConstants.aliasReports,
+        data: {'alias': alias, 'motivo': reason},
+      );
+      if (response.data is Map && response.data['success'] == true) return;
+      throw StateError(
+        response.data is Map && response.data['message'] is String
+            ? response.data['message'] as String
+            : 'No se pudo enviar la denuncia.',
+      );
+    } on DioException catch (error) {
+      final responseData = error.response?.data;
+      final message = responseData is Map && responseData['message'] is String
+          ? responseData['message'] as String
+          : 'No se pudo enviar la denuncia. Comprueba tu conexión e inténtalo nuevamente.';
+      throw StateError(message);
+    }
   }
 
   Future<void> uploadProfilePhoto(String imagePath) async {
@@ -507,7 +556,6 @@ class AuthProvider extends ChangeNotifier {
     _currentUser = null;
     _isDemoMode = false;
     _pendingRegistrationEmail = null;
-    _pendingRegistrationAlias = '';
     notifyListeners();
   }
 }

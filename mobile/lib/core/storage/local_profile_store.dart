@@ -37,12 +37,15 @@ class LocalProfileStore {
     final alias = metadata['alias'] as String?;
     final aliasUpdatedAt = metadata['aliasUpdatedAt'] as String?;
     final profileImagePath = metadata['profileImagePath'] as String?;
+    final hasServerAlias = user.alias.isNotEmpty || user.aliasUpdatedAt != null;
 
     return user.copyWith(
-      alias: alias ?? user.alias,
-      aliasUpdatedAt: aliasUpdatedAt == null
+      alias: hasServerAlias ? user.alias : alias ?? user.alias,
+      aliasUpdatedAt: hasServerAlias
           ? user.aliasUpdatedAt
-          : DateTime.parse(aliasUpdatedAt),
+          : aliasUpdatedAt == null
+              ? user.aliasUpdatedAt
+              : DateTime.parse(aliasUpdatedAt),
       profileImagePath: profileImagePath ?? user.profileImagePath,
     );
   }

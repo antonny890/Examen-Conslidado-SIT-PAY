@@ -1,4 +1,5 @@
 const { auth } = require('../../services/supabaseAuthService');
+const postgres = require('../../config/postgres');
 const { db } = require('../../services/postgresData');
 const {
   createDocument,
@@ -364,6 +365,107 @@ const toggleUserStatus = async (req, res, next) => {
   }
 };
 
+const getAliasReports = async (req, res, next) => {
+  try {
+    const status = typeof req.query.estado === 'string' ? req.query.estado : 'PENDIENTE';
+    if (!['PENDIENTE', 'RETIRADO', 'DESCARTADO'].includes(status)) {
+      return res.status(400).json({ success: false, message: 'El estado solicitado no es válido.' });
+    }
+
+    const reports = await postgres('reportes_alias as r')
+      .leftJoin('usuarios as objetivo', 'objetivo.id', 'r.usuario_objetivo_id')
+      .leftJoin('perfiles as perfil_objetivo', 'perfil_objetivo.usuario_id', 'r.usuario_objetivo_id')
+      .leftJoin('usuarios as reportante', 'reportante.id', 'r.usuario_reportante_id')
+      .select(
+        'r.*',
+        'objetivo.email as usuario_objetivo_email',
+        'perfil_objetivo.alias as alias_actual',
+        'reportante.email as usuario_reportante_email',
+      )
+      .where('r.estado', status)
+      .orderBy('r.created_at', 'desc');
+    return res.json({ success: true, data: reports });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const reviewAliasReport = async (req, res, next) => {
+  const action = typeof req.body?.accion === 'string' ? req.body.accion : '';
+  const resolution = typeof req.body?.resolucion === 'string'
+    ? req.body.resolucion.trim()
+    : '';
+  if (!['RETIRAR', 'DESCARTAR'].includes(action)) {
+    return res.status(400).json({ success: false, message: 'La acción debe ser RETIRAR o DESCARTAR.' });
+  }
+  if (resolution.length > 500) {
+    return res.status(400).json({ success: false, message: 'La resolución no puede superar los 500 caracteres.' });
+  }
+
+  try {
+    const now = new Date();
+    const result = await postgres.transaction(async (trx) => {
+      const report = await trx('reportes_alias')
+        .where({ id: req.params.id })
+        .forUpdate()
+        .first();
+      if (!report) return { status: 404, message: 'Denuncia no encontrada.' };
+      if (report.estado !== 'PENDIENTE') {
+        return { status: 409, message: 'La denuncia ya fue revisada.' };
+      }
+
+      if (action === 'RETIRAR') {
+        const profile = await trx('perfiles')
+          .where({ usuario_id: report.usuario_objetivo_id })
+          .forUpdate()
+          .first();
+        if (!profile || profile.alias?.toLowerCase() !== report.alias_reportado.toLowerCase()) {
+          return { status: 409, message: 'El alias cambió desde que se envió la denuncia; no se retiró.' };
+        }
+        await trx('perfiles')
+          .where({ usuario_id: report.usuario_objetivo_id })
+          .update({
+            alias: null,
+            alias_updated_at: now,
+            updated_at: now,
+          });
+      }
+
+      const status = action === 'RETIRAR' ? 'RETIRADO' : 'DESCARTADO';
+      const finalResolution = resolution ||
+        (action === 'RETIRAR' ? 'Alias retirado tras revisión.' : 'Denuncia descartada tras revisión.');
+      await trx('reportes_alias')
+        .where({ id: report.id })
+        .update({
+          estado: status,
+          resolucion: finalResolution,
+          resuelto_por: req.user.id,
+          resuelto_at: now,
+          updated_at: now,
+        });
+      return { status: 200, report, finalResolution, state: status };
+    });
+
+    if (result.status !== 200) {
+      return res.status(result.status).json({ success: false, message: result.message });
+    }
+    await writeAuditLog({
+      usuarioId: req.user.id,
+      accion: 'DENUNCIA_ALIAS_RESUELTA',
+      modulo: 'MODERACION',
+      valoresAnteriores: { id: result.report.id, estado: result.report.estado },
+      valoresNuevos: {
+        id: result.report.id,
+        estado: result.state,
+        resolucion: result.finalResolution,
+      },
+    });
+    return res.json({ success: true, message: 'Denuncia revisada correctamente.' });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   getGlobalDashboard,
   getCompanies,
@@ -374,4 +476,6 @@ module.exports = {
   createAdministrator,
   getAuditLogs,
   toggleUserStatus,
+  getAliasReports,
+  reviewAliasReport,
 };

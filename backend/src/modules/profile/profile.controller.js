@@ -2,6 +2,9 @@ const crypto = require('node:crypto');
 const { storage } = require('../../config/supabase');
 const { auth, revokeSession, signInWithPassword } = require('../../services/supabaseAuthService');
 const { db } = require('../../services/postgresData');
+const postgres = require('../../config/postgres');
+const { findAliasOwner } = require('../../services/aliasService');
+const { validateAlias } = require('../../utils/aliasRules');
 const {
   getDocument,
   queryCollection,
@@ -81,6 +84,143 @@ const updateProfile = async (req, res, next) => {
       data: { id: req.user.id, ...profileSnapshot.data(), ...updateData },
     });
   } catch (error) {
+    return next(error);
+  }
+};
+
+const updateAlias = async (req, res, next) => {
+  if (typeof req.body?.alias !== 'string') {
+    return res.status(400).json({ success: false, message: 'El alias debe ser texto.' });
+  }
+  if (req.user.rol !== 'PASAJERO') {
+    return res.status(403).json({ success: false, message: 'Solo los pasajeros pueden configurar un alias.' });
+  }
+  const alias = req.body.alias;
+  const aliasError = validateAlias(alias);
+  if (aliasError) {
+    return res.status(400).json({ success: false, message: aliasError });
+  }
+
+  try {
+    const result = await postgres.transaction(async (trx) => {
+      const profile = await trx('perfiles')
+        .where({ usuario_id: req.user.id })
+        .forUpdate()
+        .first();
+      if (!profile) return { status: 404, message: 'Perfil no encontrado.' };
+
+      const currentAlias = profile.alias || '';
+      if (alias.toLowerCase() === currentAlias.toLowerCase()) {
+        return {
+          status: 200,
+          message: 'El alias no tuvo cambios.',
+          data: {
+            alias: currentAlias,
+            aliasUpdatedAt: timestampToDate(profile.alias_updated_at)?.toISOString() || null,
+          },
+        };
+      }
+
+      const now = new Date();
+      const lastChangedAt = timestampToDate(profile.alias_updated_at);
+      const changeInterval = 15 * 24 * 60 * 60 * 1000;
+      if (lastChangedAt && now.getTime() - lastChangedAt.getTime() < changeInterval) {
+        const nextChangeAt = new Date(lastChangedAt.getTime() + changeInterval);
+        return {
+          status: 429,
+          message: `Podrás cambiar tu alias después del ${nextChangeAt.toLocaleDateString('es-PE')}.`,
+          data: { aliasUpdatedAt: lastChangedAt.toISOString(), nextChangeAt: nextChangeAt.toISOString() },
+        };
+      }
+
+      if (alias) {
+        const owner = await trx('perfiles')
+          .select('usuario_id')
+          .whereNotNull('alias')
+          .whereRaw('LOWER(alias) = ?', [alias.toLowerCase()])
+          .whereNot('usuario_id', req.user.id)
+          .first();
+        if (owner) {
+          return { status: 409, message: 'Ese alias ya está registrado. Elige otro.' };
+        }
+      }
+
+      await trx('perfiles')
+        .where({ usuario_id: req.user.id })
+        .update({
+          alias: alias || null,
+          alias_updated_at: now,
+          updated_at: now,
+        });
+      return {
+        status: 200,
+        message: 'Alias actualizado en tu cuenta.',
+        data: { alias, aliasUpdatedAt: now.toISOString() },
+      };
+    });
+
+    return res.status(result.status).json({
+      success: result.status === 200,
+      message: result.message,
+      ...(result.data ? { data: result.data } : {}),
+    });
+  } catch (error) {
+    if (error.code === '23505' && error.constraint === 'perfiles_alias_lower_unique') {
+      return res.status(409).json({ success: false, message: 'Ese alias ya está registrado. Elige otro.' });
+    }
+    return next(error);
+  }
+};
+
+const createAliasReport = async (req, res, next) => {
+  if (req.user.rol !== 'CHOFER') {
+    return res.status(403).json({ success: false, message: 'Solo los choferes pueden denunciar alias desde el historial de pagos.' });
+  }
+
+  const alias = typeof req.body?.alias === 'string' ? req.body.alias : '';
+  const reason = typeof req.body?.motivo === 'string' ? req.body.motivo : '';
+  const detail = typeof req.body?.detalle === 'string' ? req.body.detalle.trim() : '';
+  const allowedReasons = new Set([
+    'INSULTO',
+    'DISCURSO_DE_ODIO',
+    'SPAM',
+    'SUPLANTACION',
+    'OTRO',
+  ]);
+  if (!alias || alias.length > 40 || alias.trim() !== alias || /[\u0000-\u001f]/.test(alias)) {
+    return res.status(400).json({ success: false, message: 'El alias denunciado no tiene un formato válido.' });
+  }
+  if (!allowedReasons.has(reason)) {
+    return res.status(400).json({ success: false, message: 'Selecciona un motivo válido para la denuncia.' });
+  }
+  if (detail.length > 500) {
+    return res.status(400).json({ success: false, message: 'El detalle no puede superar los 500 caracteres.' });
+  }
+
+  try {
+    const target = await findAliasOwner(alias);
+    if (!target) {
+      return res.status(404).json({ success: false, message: 'El alias ya no está disponible para denunciar.' });
+    }
+    if (target.usuario_id === req.user.id) {
+      return res.status(400).json({ success: false, message: 'No puedes denunciar tu propio alias.' });
+    }
+
+    await postgres('reportes_alias').insert({
+      usuario_objetivo_id: target.usuario_id,
+      usuario_reportante_id: req.user.id,
+      alias_reportado: alias,
+      motivo: reason,
+      detalle: detail || null,
+    });
+    return res.status(201).json({
+      success: true,
+      message: 'Denuncia enviada para revisión.',
+    });
+  } catch (error) {
+    if (error.code === '23505' && error.constraint === 'reportes_alias_pending_unique') {
+      return res.status(409).json({ success: false, message: 'Ya enviaste una denuncia pendiente sobre este alias.' });
+    }
     return next(error);
   }
 };
@@ -208,6 +348,8 @@ const deactivateAccount = async (req, res, next) => {
 module.exports = {
   getProfile,
   updateProfile,
+  updateAlias,
+  createAliasReport,
   updateProfilePhoto,
   changePassword,
   registerConsent,

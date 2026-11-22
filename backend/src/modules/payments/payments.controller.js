@@ -144,7 +144,7 @@ const beginPayment = async (req, res, next) => {
     if (created) {
       emitPaymentConfirmationToDriver(
         vehicle.id,
-        profile?.alias || profile?.nombres || null,
+        profile?.alias || null,
         transactionRecord.codigo_boleta,
         { simulated: true },
       );

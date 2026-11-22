@@ -15,6 +15,7 @@ import { CompaniesAndUnitsPage } from './pages/superadmin/CompaniesAndUnitsPage'
 import { FaresConfigurationPage } from './pages/superadmin/FaresConfigurationPage';
 import { AuditLogsPage } from './pages/superadmin/AuditLogsPage';
 import { AdministratorsPage } from './pages/superadmin/AdministratorsPage';
+import { AliasReportsPage } from './pages/superadmin/AliasReportsPage';
 import { ProfilePage } from './pages/profile/ProfilePage';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRole?: string }> = ({
@@ -72,6 +73,7 @@ export default function App() {
             {/* Rutas Super Admin */}
             <Route path="/superadmin/dashboard" element={<SuperAdminDashboardPage />} />
             <Route path="/superadmin/claims" element={<ClaimsManagementPage />} />
+            <Route path="/superadmin/alias-reports" element={<AliasReportsPage />} />
             <Route path="/superadmin/companies" element={<CompaniesAndUnitsPage />} />
             <Route path="/superadmin/fares" element={<FaresConfigurationPage />} />
             <Route path="/superadmin/users" element={<AdministratorsPage />} />

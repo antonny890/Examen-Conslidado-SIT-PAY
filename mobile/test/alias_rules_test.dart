@@ -7,9 +7,9 @@ void main() {
       expect(AliasRules.validate(''), isNull);
     });
 
-    test('allows letters, Spanish accents and numbers', () {
+    test('allows ASCII letters and numbers with a leading letter', () {
       expect(AliasRules.validate('Nino2026'), isNull);
-      expect(AliasRules.validate('José123'), isNull);
+      expect(AliasRules.validate('A1234'), isNull);
     });
 
     test('rejects spaces and special characters', () {
@@ -19,8 +19,19 @@ void main() {
     });
 
     test('enforces the configured length limits', () {
-      expect(AliasRules.validate('ab'), isNotNull);
-      expect(AliasRules.validate('a' * 21), isNotNull);
+      expect(AliasRules.validate('Abcd'), isNotNull);
+      expect(AliasRules.validate('A' * 17), isNotNull);
+      expect(AliasRules.validate('A' * 16), isNull);
+    });
+
+    test('rejects accents, leading numbers, and offensive leetspeak', () {
+      expect(AliasRules.validate('José123'), isNotNull);
+      expect(AliasRules.validate('1Abcd'), isNotNull);
+      expect(AliasRules.validate('Puta123'), isNotNull);
+      expect(AliasRules.validate('P3ndej0'), isNotNull);
+      expect(AliasRules.validate('SoyPuta123'), isNotNull);
+      expect(AliasRules.validate('Püt4s2026'), isNotNull);
+      expect(AliasRules.validate('Computadora1'), isNull);
     });
   });
 
