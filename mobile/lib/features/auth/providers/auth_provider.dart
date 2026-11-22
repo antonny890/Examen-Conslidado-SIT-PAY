@@ -468,9 +468,8 @@ class AuthProvider extends ChangeNotifier {
     }
 
     final aliasData = responseData['data'] as Map;
-    final savedAlias = aliasData['alias'] is String
-        ? aliasData['alias'] as String
-        : alias;
+    final savedAlias =
+        aliasData['alias'] is String ? aliasData['alias'] as String : alias;
     final aliasUpdatedAt = aliasData['aliasUpdatedAt'] is String
         ? DateTime.tryParse(aliasData['aliasUpdatedAt'] as String)
         : null;
@@ -523,25 +522,56 @@ class AuthProvider extends ChangeNotifier {
       throw const FormatException('El formato de imagen no es compatible.');
     }
 
-    final response = await _apiClient.dio.put(
-      '${ApiConstants.profile}/photo',
-      data: {
-        'imageBase64': base64Encode(await imageFile.readAsBytes()),
-        'mimeType': mimeType,
-      },
-    );
-    if (response.data is! Map ||
-        response.data['success'] != true ||
-        response.data['data'] is! Map ||
-        response.data['data']['fotoUrl'] is! String) {
+    try {
+      final response = await _apiClient.dio.put(
+        '${ApiConstants.profile}/photo',
+        data: {
+          'imageBase64': base64Encode(await imageFile.readAsBytes()),
+          'mimeType': mimeType,
+        },
+      );
+      if (response.data is! Map ||
+          response.data['success'] != true ||
+          response.data['data'] is! Map ||
+          response.data['data']['fotoUrl'] is! String) {
+        throw StateError(
+          response.data is Map && response.data['message'] is String
+              ? response.data['message'] as String
+              : 'No se pudo guardar la foto en el servidor.',
+        );
+      }
+      await updateLocalProfile(
+          fotoUrl: response.data['data']['fotoUrl'] as String);
+    } on DioException catch (error) {
+      final responseData = error.response?.data;
+      final serverMessage =
+          responseData is Map && responseData['message'] is String
+              ? responseData['message'] as String
+              : null;
+      const sessionErrors = {
+        'Acceso no autorizado. Se requiere un token de acceso.',
+        'Token de acceso inválido o expirado.',
+        'La sesión fue revocada. Inicia sesión nuevamente.',
+        'La cuenta asociada al token no existe.',
+      };
+      if (error.response?.statusCode == 401 &&
+          serverMessage != null &&
+          sessionErrors.contains(serverMessage)) {
+        await SecureStorageService.clearAll();
+        _currentUser = null;
+        _isDemoMode = false;
+        notifyListeners();
+        throw StateError(
+          'La sesión expiró o fue revocada. Inicia sesión nuevamente.',
+        );
+      }
       throw StateError(
-        response.data is Map && response.data['message'] is String
-            ? response.data['message'] as String
-            : 'No se pudo guardar la foto en el servidor.',
+        serverMessage ??
+            (error.response?.statusCode == 401
+                ? 'El servidor rechazó la solicitud (401). Vuelve a iniciar sesión; si continúa, revisa la configuración de Supabase Storage en el backend.'
+                : 'No se pudo subir la foto al servidor. Verifica tu conexión e inténtalo nuevamente.'),
       );
     }
-    await updateLocalProfile(
-        fotoUrl: response.data['data']['fotoUrl'] as String);
   }
 
   // 4. Cerrar Sesión

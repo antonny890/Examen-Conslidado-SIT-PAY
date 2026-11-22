@@ -4,7 +4,7 @@ import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 
 interface Fare {
-  id: number;
+  id: string;
   nombre: string;
   tipo_pasajero: 'NORMAL' | 'UNIVERSITARIA';
   monto: string | number;
@@ -14,9 +14,15 @@ interface Fare {
   activo: boolean;
 }
 
+type FareType = Fare['tipo_pasajero'];
+
+const fareTypes: FareType[] = ['NORMAL', 'UNIVERSITARIA'];
+const defaultFareName = (type: FareType) =>
+  type === 'NORMAL' ? 'Tarifa Normal' : 'Tarifa Universitaria';
+
 const demoFares: Fare[] = [
   {
-    id: 1,
+    id: 'demo-normal',
     nombre: 'Tarifa Normal',
     tipo_pasajero: 'NORMAL',
     monto: 1,
@@ -26,7 +32,7 @@ const demoFares: Fare[] = [
     activo: true,
   },
   {
-    id: 2,
+    id: 'demo-universitaria',
     nombre: 'Tarifa Universitaria',
     tipo_pasajero: 'UNIVERSITARIA',
     monto: 0.5,
@@ -45,6 +51,16 @@ export const FaresConfigurationPage: React.FC = () => {
   const [selectedFare, setSelectedFare] = useState<Fare | null>(null);
   const [form, setForm] = useState({ nombre: '', monto: '', porcentajeDescuento: '' });
   const [saving, setSaving] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    tipoPasajero: 'NORMAL' as FareType,
+    nombre: defaultFareName('NORMAL'),
+    monto: '',
+    porcentajeDescuento: '0',
+  });
+  const missingFareTypes = fareTypes.filter(
+    (type) => !fares.some((fare) => fare.tipo_pasajero === type && fare.activo),
+  );
 
   useEffect(() => {
     const fetchFares = async () => {
@@ -56,12 +72,23 @@ export const FaresConfigurationPage: React.FC = () => {
 
       try {
         const response = await api.get('/fares');
-        if (response.data.success) {
-          setFares(
-            (response.data.data as Fare[]).filter(
-              (fare) => ['NORMAL', 'UNIVERSITARIA'].includes(fare.tipo_pasajero),
-            ),
+        if (response.data.success && Array.isArray(response.data.data)) {
+          const loadedFares = (response.data.data as Fare[]).filter(
+            (fare) => ['NORMAL', 'UNIVERSITARIA'].includes(fare.tipo_pasajero),
           );
+          setFares(loadedFares);
+          const firstMissingType = fareTypes.find(
+            (type) => !loadedFares.some((fare) => fare.tipo_pasajero === type && fare.activo),
+          );
+          if (firstMissingType) {
+            setCreateForm((current) => ({
+              ...current,
+              tipoPasajero: firstMissingType,
+              nombre: defaultFareName(firstMissingType),
+            }));
+          }
+        } else {
+          setError('El servidor devolvió una lista de tarifas inválida.');
         }
       } catch (requestError: any) {
         setError(requestError.response?.data?.message || 'No se pudieron cargar las tarifas.');
@@ -127,6 +154,55 @@ export const FaresConfigurationPage: React.FC = () => {
     }
   };
 
+  const createFare = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const amount = Number(createForm.monto);
+    const discount = Number(createForm.porcentajeDescuento);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setError('El monto debe ser mayor que cero.');
+      return;
+    }
+    if (!Number.isFinite(discount) || discount < 0 || discount > 100) {
+      setError('El descuento debe estar entre 0 y 100 %.');
+      return;
+    }
+
+    setCreating(true);
+    setError('');
+    try {
+      const response = await api.post('/fares', {
+        nombre: createForm.nombre.trim(),
+        tipoPasajero: createForm.tipoPasajero,
+        monto: amount,
+        porcentajeDescuento: discount,
+      });
+      if (!response.data.success || !response.data.data) {
+        throw new Error('El servidor no confirmó el registro de la tarifa.');
+      }
+      const createdFare = response.data.data as Fare;
+      setFares((current) => [...current, createdFare]);
+      const nextMissingType = missingFareTypes.find(
+        (type) => type !== createdFare.tipo_pasajero,
+      );
+      if (nextMissingType) {
+        setCreateForm({
+          tipoPasajero: nextMissingType,
+          nombre: defaultFareName(nextMissingType),
+          monto: '',
+          porcentajeDescuento: '0',
+        });
+      }
+    } catch (requestError: any) {
+      setError(
+        requestError.response?.data?.message ||
+          requestError.message ||
+          'No se pudo crear la tarifa.',
+      );
+    } finally {
+      setCreating(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <header>
@@ -151,59 +227,135 @@ export const FaresConfigurationPage: React.FC = () => {
 
       {loading ? (
         <p className="text-sm text-slate-400">Cargando tarifas…</p>
-      ) : fares.length !== 2 ? (
-        <p role="alert" className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">
-          Se esperaban las tarifas Normal y Universitaria. Verifica que la migración de tarifas esté aplicada.
-        </p>
       ) : (
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-          {fares.map((fare) => (
-            <article key={fare.id} className="relative space-y-5 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/80 p-6">
-              <div className="flex items-center justify-between gap-3">
-                <span className={`rounded border px-2.5 py-1 font-mono text-xs font-bold ${fare.tipo_pasajero === 'UNIVERSITARIA' ? 'border-blue-500/20 bg-blue-500/10 text-blue-300' : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300'}`}>
-                  {fare.tipo_pasajero === 'NORMAL' ? 'NORMAL · PARA TODOS' : 'UNIVERSITARIA'}
-                </span>
-                <span className={`text-[10px] font-bold ${fare.activo ? 'text-emerald-400' : 'text-slate-500'}`}>
-                  {fare.activo ? 'VIGENTE' : 'DESACTIVADA'}
-                </span>
-              </div>
+        <>
+          {fares.length > 0 && (
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+              {fares.map((fare) => (
+                <article key={fare.id} className="relative space-y-5 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/80 p-6">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className={`rounded border px-2.5 py-1 font-mono text-xs font-bold ${fare.tipo_pasajero === 'UNIVERSITARIA' ? 'border-blue-500/20 bg-blue-500/10 text-blue-300' : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300'}`}>
+                      {fare.tipo_pasajero === 'NORMAL' ? 'NORMAL · PARA TODOS' : 'UNIVERSITARIA'}
+                    </span>
+                    <span className={`text-[10px] font-bold ${fare.activo ? 'text-emerald-400' : 'text-slate-500'}`}>
+                      {fare.activo ? 'VIGENTE' : 'DESACTIVADA'}
+                    </span>
+                  </div>
 
+                  <div>
+                    <h2 className="font-bold text-white">{fare.nombre}</h2>
+                    <div className="mt-1 font-mono text-4xl font-black text-white">
+                      S/ {Number(fare.monto).toFixed(2)}
+                    </div>
+                    <p className="mt-1 text-xs text-slate-400">
+                      Descuento: <strong className="text-emerald-400">{Number(fare.porcentaje_descuento)} %</strong>
+                    </p>
+                  </div>
+
+                  <div className="space-y-2 border-t border-slate-800 pt-3 text-xs text-slate-300">
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-3.5 w-3.5 text-slate-500" />
+                      <span>Horario: {fare.hora_inicio.slice(0, 5)} a {fare.hora_fin.slice(0, 5)}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Calendar className="h-3.5 w-3.5 text-slate-500" />
+                      <span>{fare.tipo_pasajero === 'NORMAL' ? 'Todos los días' : 'Días laborables'}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="h-3.5 w-3.5 text-slate-500" />
+                      <span>{fare.tipo_pasajero === 'UNIVERSITARIA' ? 'Acreditación por correo institucional' : 'Tarifa general'}</span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => startEditing(fare)}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 py-2.5 text-xs font-bold text-slate-200 transition-colors hover:bg-slate-700"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Modificar tarifa
+                  </button>
+                </article>
+              ))}
+            </div>
+          )}
+
+          {missingFareTypes.length > 0 && !isDemoMode && (
+            <form
+              onSubmit={createFare}
+              className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/80 p-6"
+            >
               <div>
-                <h2 className="font-bold text-white">{fare.nombre}</h2>
-                <div className="mt-1 font-mono text-4xl font-black text-white">
-                  S/ {Number(fare.monto).toFixed(2)}
-                </div>
+                <h2 className="font-bold text-white">Crear tarifa faltante</h2>
                 <p className="mt-1 text-xs text-slate-400">
-                  Descuento: <strong className="text-emerald-400">{Number(fare.porcentaje_descuento)} %</strong>
+                  La tarifa se guardará en la base de datos del servidor.
                 </p>
               </div>
-
-              <div className="space-y-2 border-t border-slate-800 pt-3 text-xs text-slate-300">
-                <div className="flex items-center gap-2">
-                  <Clock className="h-3.5 w-3.5 text-slate-500" />
-                  <span>Horario: {fare.hora_inicio.slice(0, 5)} a {fare.hora_fin.slice(0, 5)}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Calendar className="h-3.5 w-3.5 text-slate-500" />
-                  <span>{fare.tipo_pasajero === 'NORMAL' ? 'Todos los días' : 'Días laborables'}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <ShieldCheck className="h-3.5 w-3.5 text-slate-500" />
-                  <span>{fare.tipo_pasajero === 'UNIVERSITARIA' ? 'Acreditación por correo institucional' : 'Tarifa general'}</span>
-                </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block space-y-1 text-xs text-slate-300">
+                  <span>Categoría</span>
+                  <select
+                    value={createForm.tipoPasajero}
+                    onChange={(event) => {
+                      const tipoPasajero = event.target.value as FareType;
+                      setCreateForm((current) => ({
+                        ...current,
+                        tipoPasajero,
+                        nombre: defaultFareName(tipoPasajero),
+                      }));
+                    }}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-white"
+                  >
+                    {missingFareTypes.map((type) => (
+                      <option key={type} value={type}>{defaultFareName(type)}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block space-y-1 text-xs text-slate-300">
+                  <span>Nombre</span>
+                  <input
+                    required
+                    value={createForm.nombre}
+                    onChange={(event) => setCreateForm((current) => ({ ...current, nombre: event.target.value }))}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-white"
+                  />
+                </label>
+                <label className="block space-y-1 text-xs text-slate-300">
+                  <span>Monto (S/)</span>
+                  <input
+                    required
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={createForm.monto}
+                    onChange={(event) => setCreateForm((current) => ({ ...current, monto: event.target.value }))}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-white"
+                  />
+                </label>
+                <label className="block space-y-1 text-xs text-slate-300">
+                  <span>Descuento (%)</span>
+                  <input
+                    required
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={createForm.porcentajeDescuento}
+                    onChange={(event) => setCreateForm((current) => ({ ...current, porcentajeDescuento: event.target.value }))}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-white"
+                  />
+                </label>
               </div>
-
               <button
-                type="button"
-                onClick={() => startEditing(fare)}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 py-2.5 text-xs font-bold text-slate-200 transition-colors hover:bg-slate-700"
+                type="submit"
+                disabled={creating}
+                className="rounded-xl bg-emerald-500 px-5 py-2.5 text-xs font-bold text-slate-950 disabled:opacity-50"
               >
-                <Pencil className="h-3.5 w-3.5" />
-                Modificar tarifa
+                {creating ? 'Guardando…' : 'Guardar tarifa'}
               </button>
-            </article>
-          ))}
-        </div>
+            </form>
+          )}
+        </>
       )}
 
       {selectedFare && (

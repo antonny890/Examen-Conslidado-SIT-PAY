@@ -653,9 +653,11 @@ class _ManageProfileScreenState extends State<_ManageProfileScreen> {
       );
     } catch (error) {
       if (!mounted) return;
+      final message =
+          error is StateError ? error.message.toString() : error.toString();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('No se pudo actualizar la foto: $error'),
+          content: Text('No se pudo actualizar la foto: $message'),
           backgroundColor: Colors.red.shade700,
         ),
       );
@@ -676,43 +678,10 @@ class _ManageProfileScreenState extends State<_ManageProfileScreen> {
       return;
     }
 
-    final controller = TextEditingController(text: user.alias);
-    final formKey = GlobalKey<FormState>();
     final alias = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(user.alias.isEmpty ? 'Agregar alias' : 'Cambiar alias'),
-        content: Form(
-          key: formKey,
-          child: TextFormField(
-            controller: controller,
-            autofocus: true,
-            maxLength: AliasRules.maxLength,
-            validator: AliasRules.validate,
-            decoration: const InputDecoration(
-              labelText: 'Alias',
-              helperText:
-                  '5-16 caracteres, inicia con letra, solo A-Z/números y sin alias ofensivos.',
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (formKey.currentState!.validate()) {
-                Navigator.pop(context, controller.text);
-              }
-            },
-            child: const Text('Guardar'),
-          ),
-        ],
-      ),
+      builder: (_) => _AliasEditorDialog(alias: user.alias),
     );
-    controller.dispose();
 
     if (alias == null || !mounted) return;
     try {
@@ -840,6 +809,72 @@ class _SecurityPrivacyScreen extends StatefulWidget {
 
   @override
   State<_SecurityPrivacyScreen> createState() => _SecurityPrivacyScreenState();
+}
+
+class _AliasEditorDialog extends StatefulWidget {
+  const _AliasEditorDialog({required this.alias});
+
+  final String alias;
+
+  @override
+  State<_AliasEditorDialog> createState() => _AliasEditorDialogState();
+}
+
+class _AliasEditorDialogState extends State<_AliasEditorDialog> {
+  late final TextEditingController _controller;
+  String? _validationError;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.alias);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.alias.isEmpty ? 'Agregar alias' : 'Cambiar alias'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        maxLength: AliasRules.maxLength,
+        onChanged: (_) {
+          if (_validationError != null) {
+            setState(() => _validationError = null);
+          }
+        },
+        decoration: InputDecoration(
+          labelText: 'Alias',
+          helperText:
+              '5-16 caracteres, inicia con letra, solo A-Z/números y sin alias ofensivos.',
+          errorText: _validationError,
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final validationError = AliasRules.validate(_controller.text);
+            if (validationError != null) {
+              setState(() => _validationError = validationError);
+              return;
+            }
+            Navigator.pop(context, _controller.text);
+          },
+          child: const Text('Guardar'),
+        ),
+      ],
+    );
+  }
 }
 
 class _SecurityPrivacyScreenState extends State<_SecurityPrivacyScreen> {

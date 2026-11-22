@@ -3,15 +3,45 @@ import {
   TrendingUp,
   DollarSign,
   Bus,
-  Users,
   AlertCircle,
   Calendar
 } from 'lucide-react';
 import { api } from '../../services/api';
 
+interface DashboardTransaction {
+  id: string;
+  codigo_boleta: string;
+  placa: string;
+  tipo_tarifa_aplicada: string;
+  monto: number | string;
+  fecha_pago: string;
+}
+
+interface CompanyDashboardData {
+  empresa: {
+    razon_social?: string;
+    nombre_comercial?: string;
+  };
+  recaudacionHoy: {
+    monto: number;
+    pasajesCobrados: number;
+  };
+  recaudacionHistorica: {
+    monto: number;
+    pasajesCobrados: number;
+  };
+  flota: {
+    totalVehiculos: number;
+    totalChoferes: number;
+  };
+  reclamosPendientes: number;
+  ultimasTransacciones: DashboardTransaction[];
+}
+
 export const CompanyDashboardPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<CompanyDashboardData | null>(null);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     fetchDashboard();
@@ -21,9 +51,15 @@ export const CompanyDashboardPage: React.FC = () => {
     try {
       const res = await api.get('/company/dashboard');
       if (res.data.success) {
-        setData(res.data.data);
+        setData(res.data.data as CompanyDashboardData);
+      } else {
+        setError(res.data.message || 'El servidor no pudo cargar el panel de la empresa.');
       }
-    } catch (_) {
+    } catch (requestError: any) {
+      setError(
+        requestError.response?.data?.message ||
+          'No se pudieron cargar las métricas de la empresa.',
+      );
     } finally {
       setLoading(false);
     }
@@ -39,12 +75,17 @@ export const CompanyDashboardPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {error && (
+        <div role="alert" className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-xs text-red-200">
+          {error}
+        </div>
+      )}
       {/* Title Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-white tracking-tight">Resumen de Empresa</h1>
           <p className="text-xs text-slate-400">
-            {data?.empresa?.razon_social || 'Transcayma Operadora de Transporte S.A.'} • Arequipa
+            {data?.empresa?.razon_social || data?.empresa?.nombre_comercial || 'Empresa asignada'} • Arequipa
           </p>
         </div>
         <div className="flex items-center gap-2 text-xs font-mono bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl text-slate-300">
@@ -63,9 +104,11 @@ export const CompanyDashboardPage: React.FC = () => {
               <DollarSign className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-xl font-black text-amber-300">No disponible</div>
+          <div className="text-xl font-black text-white">
+            {data ? `S/ ${Number(data.recaudacionHoy.monto).toFixed(2)}` : 'Sin datos'}
+          </div>
           <div className="text-xs text-slate-400">
-            Integración bancaria pendiente
+            {data ? `${data.recaudacionHoy.pasajesCobrados} pasajes cobrados hoy` : 'Sin información del servidor'}
           </div>
         </div>
 
@@ -86,14 +129,16 @@ export const CompanyDashboardPage: React.FC = () => {
         {/* Cumplimiento Medio Pasaje Ley 26271 */}
         <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-2xl space-y-2">
           <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Tasa Medio Pasaje (Ley 26271)</span>
+            <span>Recaudación histórica</span>
             <div className="p-2 rounded-xl bg-purple-500/10 text-purple-400">
               <TrendingUp className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-xl font-black text-slate-300">Sin datos</div>
+          <div className="text-xl font-black text-slate-300">
+            S/ {Number(data?.recaudacionHistorica.monto || 0).toFixed(2)}
+          </div>
           <div className="text-xs text-slate-400">
-            No hay información conectada
+            {data?.recaudacionHistorica.pasajesCobrados ?? 0} pagos verificados históricos
           </div>
         </div>
 
@@ -112,15 +157,13 @@ export const CompanyDashboardPage: React.FC = () => {
         </div>
       </div>
 
-      <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-5 text-sm text-amber-200">
-        Los reportes y gráficos de recaudación estarán disponibles cuando se integre el proveedor bancario y existan pagos verificados.
-      </div>
-
       {/* Ultimas Transacciones Registradas */}
       <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-bold text-white">Pagos confirmados</h3>
-          <span className="text-xs text-slate-400 font-mono">No disponible sin integración bancaria</span>
+          <span className="text-xs text-slate-400 font-mono">
+            {data?.ultimasTransacciones.length ?? 0} registros
+          </span>
         </div>
 
         <div className="overflow-x-auto">
@@ -135,7 +178,7 @@ export const CompanyDashboardPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-mono">
-              {(data?.ultimasTransacciones || []).map((t: any) => (
+              {(data?.ultimasTransacciones || []).map((t) => (
                 <tr key={t.id} className="hover:bg-slate-800/30 transition-colors">
                   <td className="py-2.5 px-3 font-bold text-white">{t.codigo_boleta}</td>
                   <td className="py-2.5 px-3 text-slate-300">{t.placa}</td>
@@ -145,13 +188,20 @@ export const CompanyDashboardPage: React.FC = () => {
                     </span>
                   </td>
                   <td className="py-2.5 px-3 font-bold text-emerald-400">
-                    S/ {parseFloat(t.monto).toFixed(2)}
+                    S/ {Number(t.monto).toFixed(2)}
                   </td>
                   <td className="py-2.5 px-3 text-slate-400 font-sans text-[11px]">
                     {new Date(t.fecha_pago).toLocaleString('es-PE')}
                   </td>
                 </tr>
               ))}
+              {!loading && data?.ultimasTransacciones.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="py-6 px-3 text-center text-slate-400">
+                    No hay pagos verificados para mostrar.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

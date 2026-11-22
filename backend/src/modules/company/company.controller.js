@@ -209,44 +209,70 @@ const createDriver = async (req, res, next) => {
 
 const csvValue = (value) => `"${String(value ?? '').replaceAll('"', '""')}"`;
 
+const getReportTransactions = async (req, limit = 1000) => {
+  const { empresaId, fechaInicio, fechaFin } = req.query;
+  let targetCompanyId = empresaId;
+  if (req.user.rol === 'ADMIN_EMPRESA') {
+    const company = await companyForAdmin(req.user.id);
+    if (!company) {
+      const error = new Error('No se encontró una empresa activa para este administrador.');
+      error.statusCode = 404;
+      throw error;
+    }
+    targetCompanyId = company.id;
+  }
+  let transactions = (await listCollection('transacciones'))
+    .filter((record) => record.estado === 'EXITOSA' && record.pago_simulado !== true);
+  if (targetCompanyId) transactions = transactions.filter((record) => record.empresa_id === targetCompanyId);
+  if (fechaInicio) transactions = transactions.filter((record) =>
+    timestampToDate(record.fecha_pago)?.toISOString().slice(0, 10) >= fechaInicio,
+  );
+  if (fechaFin) transactions = transactions.filter((record) =>
+    timestampToDate(record.fecha_pago)?.toISOString().slice(0, 10) <= fechaFin,
+  );
+  transactions.sort(newestFirst);
+  return Promise.all(transactions.slice(0, limit).map(async (transaction) => {
+    const [vehicle, unit] = await Promise.all([
+      getDocument('vehiculos', transaction.vehiculo_id),
+      getDocument('unidades_negocio', transaction.unidad_negocio_id),
+    ]);
+    const date = timestampToDate(transaction.fecha_pago);
+    return {
+      codigo_boleta: transaction.codigo_boleta || '',
+      fecha_pago: date?.toISOString() || null,
+      placa: vehicle?.placa || '',
+      cuenca: unit?.codigo || '',
+      tipo_tarifa_aplicada: transaction.tipo_tarifa_aplicada || '',
+      monto: Number(transaction.monto || 0),
+      metodo_pago: transaction.metodo_pago || '',
+    };
+  }));
+};
+
+const listReportTransactions = async (req, res, next) => {
+  try {
+    const rows = await getReportTransactions(req, 100);
+    return res.json({ success: true, data: rows });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const exportReportCSV = async (req, res, next) => {
   try {
-    const { empresaId, fechaInicio, fechaFin } = req.query;
-    let targetCompanyId = empresaId;
-    if (req.user.rol === 'ADMIN_EMPRESA') {
-      const company = await companyForAdmin(req.user.id);
-      if (!company) return res.status(404).json({ success: false, message: 'No se encontró una empresa activa para este administrador.' });
-      targetCompanyId = company.id;
-    }
-    let transactions = (await listCollection('transacciones'))
-      .filter((record) => record.estado === 'EXITOSA' && record.pago_simulado !== true);
-    if (targetCompanyId) transactions = transactions.filter((record) => record.empresa_id === targetCompanyId);
-    if (fechaInicio) transactions = transactions.filter((record) =>
-      timestampToDate(record.fecha_pago)?.toISOString().slice(0, 10) >= fechaInicio,
-    );
-    if (fechaFin) transactions = transactions.filter((record) =>
-      timestampToDate(record.fecha_pago)?.toISOString().slice(0, 10) <= fechaFin,
-    );
-    transactions.sort(newestFirst);
-    const rows = await Promise.all(transactions.slice(0, 1000).map(async (transaction) => {
-      const [vehicle, unit] = await Promise.all([
-        getDocument('vehiculos', transaction.vehiculo_id),
-        getDocument('unidades_negocio', transaction.unidad_negocio_id),
-      ]);
-      const date = timestampToDate(transaction.fecha_pago);
-      return [
-        transaction.codigo_boleta,
-        date?.toISOString() || '',
-        vehicle?.placa || '',
-        unit?.codigo || '',
-        transaction.tipo_tarifa_aplicada,
-        Number(transaction.monto || 0).toFixed(2),
-        transaction.metodo_pago,
-      ].map(csvValue).join(',');
-    }));
+    const rows = await getReportTransactions(req);
+    const csvRows = rows.map((row) => [
+      row.codigo_boleta,
+      row.fecha_pago || '',
+      row.placa,
+      row.cuenca,
+      row.tipo_tarifa_aplicada,
+      row.monto.toFixed(2),
+      row.metodo_pago,
+    ].map(csvValue).join(','));
     const csv = [
       'Codigo_Boleta,Fecha_Hora,Placa,Cuenca,Tipo_Tarifa,Monto_Soles,Metodo_Pago',
-      ...rows,
+      ...csvRows,
     ].join('\n');
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename=recaudacion-sit-pay-${Date.now()}.csv`);
@@ -266,4 +292,10 @@ const getBusinessUnits = async (req, res, next) => {
   }
 };
 
-module.exports = { getBusinessUnits, getCompanyDashboard, createDriver, exportReportCSV };
+module.exports = {
+  getBusinessUnits,
+  getCompanyDashboard,
+  createDriver,
+  exportReportCSV,
+  listReportTransactions,
+};

@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import axios from 'axios';
 import { api } from '../services/api';
 
 export interface User {
@@ -167,8 +166,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = () => {
     const accessToken = localStorage.getItem('sit_pay_admin_token');
     if (accessToken && localStorage.getItem('sit_pay_admin_demo') !== 'true') {
-      void axios.post(
-        `${import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1'}/auth/logout`,
+      void api.post(
+        '/auth/logout',
         {},
         { headers: { Authorization: `Bearer ${accessToken}` } },
       ).catch(() => undefined);

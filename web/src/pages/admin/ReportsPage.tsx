@@ -1,20 +1,80 @@
-import React, { useState } from 'react';
-import { Download, Filter, FileSpreadsheet, Calendar, Search } from 'lucide-react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Download, Calendar } from 'lucide-react';
 import { api } from '../../services/api';
 
-export const ReportsPage: React.FC = () => {
-  const [startDate, setStartDate] = useState('2026-10-01');
-  const [endDate, setEndDate] = useState('2026-10-31');
-  const [downloading, setDownloading] = useState(false);
+interface ReportRow {
+  codigo_boleta: string;
+  fecha_pago: string | null;
+  placa: string;
+  cuenca: string;
+  tipo_tarifa_aplicada: string;
+  monto: number;
+  metodo_pago: string;
+}
 
-  const sampleRows = [
-    { code: 'BOL-20261030-000001', date: '2026-10-30 07:45:00', plate: 'V7A-890', zone: 'C3 Cayma', fare: 'NORMAL', amount: 1.0, method: 'QR' },
-    { code: 'BOL-20261030-000002', date: '2026-10-30 08:12:00', plate: 'V7A-890', zone: 'C3 Cayma', fare: 'UNIVERSITARIA', amount: 0.5, method: 'QR' },
-    { code: 'BOL-20261030-000003', date: '2026-10-30 08:30:00', plate: 'V8B-123', zone: 'C2 Cono Norte', fare: 'NORMAL', amount: 1.0, method: 'PLACA_MANUAL' },
-  ];
+const formatDateInput = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+export const ReportsPage: React.FC = () => {
+  const [startDate, setStartDate] = useState(() => {
+    const now = new Date();
+    return formatDateInput(new Date(now.getFullYear(), now.getMonth(), 1));
+  });
+  const [endDate, setEndDate] = useState(() => {
+    const now = new Date();
+    return formatDateInput(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+  });
+  const [rows, setRows] = useState<ReportRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [downloading, setDownloading] = useState(false);
+  const [error, setError] = useState('');
+
+  const fetchTransactions = useCallback(async () => {
+    if (startDate > endDate) {
+      setError('La fecha inicial no puede ser posterior a la fecha final.');
+      setRows([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    try {
+      const response = await api.get('/company/report-transactions', {
+        params: { fechaInicio: startDate, fechaFin: endDate },
+      });
+      if (!response.data.success || !Array.isArray(response.data.data)) {
+        throw new Error('El servidor devolvió un reporte inválido.');
+      }
+      setRows(response.data.data);
+    } catch (requestError: any) {
+      setError(
+        requestError.response?.data?.message ||
+          requestError.message ||
+          'No se pudieron cargar las transacciones.',
+      );
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [endDate, startDate]);
+
+  useEffect(() => {
+    void fetchTransactions();
+  }, [fetchTransactions]);
 
   const handleExportCSV = async () => {
+    if (startDate > endDate) {
+      setError('La fecha inicial no puede ser posterior a la fecha final.');
+      return;
+    }
+
     setDownloading(true);
+    setError('');
     try {
       const response = await api.get('/company/export-csv', {
         params: { fechaInicio: startDate, fechaFin: endDate },
@@ -29,7 +89,7 @@ export const ReportsPage: React.FC = () => {
       link.click();
       link.remove();
     } catch (error: any) {
-      alert(error.response?.data?.message || 'No se pudo descargar el reporte CSV.');
+      setError(error.response?.data?.message || 'No se pudo descargar el reporte CSV.');
     } finally {
       setDownloading(false);
     }
@@ -41,7 +101,7 @@ export const ReportsPage: React.FC = () => {
         <div>
           <h1 className="text-xl font-bold text-white tracking-tight">Reportes de Recaudación y Liquidación</h1>
           <p className="text-xs text-slate-400">
-            Filtra por rango de fechas, cuenca y conductor para auditar la recaudación y exportar a CSV.
+            Consulta transacciones verificadas del servidor por rango de fechas y expórtalas a CSV.
           </p>
         </div>
         <button
@@ -54,7 +114,12 @@ export const ReportsPage: React.FC = () => {
         </button>
       </div>
 
-      {/* Filter Bar */}
+      {error && (
+        <p role="alert" className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-200">
+          {error}
+        </p>
+      )}
+
       <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl flex flex-wrap items-center gap-4 text-xs">
         <div className="flex items-center gap-2">
           <Calendar className="w-4 h-4 text-slate-500" />
@@ -75,12 +140,16 @@ export const ReportsPage: React.FC = () => {
             className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-white font-mono"
           />
         </div>
-        <button className="px-4 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold ml-auto">
+        <button
+          type="button"
+          onClick={() => void fetchTransactions()}
+          disabled={loading}
+          className="px-4 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold ml-auto disabled:opacity-50"
+        >
           Aplicar Filtros
         </button>
       </div>
 
-      {/* Data Table Preview */}
       <div className="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-xs text-left">
@@ -96,23 +165,39 @@ export const ReportsPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-mono">
-              {sampleRows.map((r, i) => (
-                <tr key={i} className="hover:bg-slate-800/30 transition-colors">
-                  <td className="py-3 px-4 font-bold text-white">{r.code}</td>
-                  <td className="py-3 px-4 text-slate-400 font-sans">{r.date}</td>
-                  <td className="py-3 px-4 font-bold text-slate-300">{r.plate}</td>
-                  <td className="py-3 px-4 text-slate-400 font-sans">{r.zone}</td>
+              {rows.map((row) => (
+                <tr key={row.codigo_boleta} className="hover:bg-slate-800/30 transition-colors">
+                  <td className="py-3 px-4 font-bold text-white">{row.codigo_boleta}</td>
+                  <td className="py-3 px-4 text-slate-400 font-sans">
+                    {row.fecha_pago ? new Date(row.fecha_pago).toLocaleString('es-PE') : '—'}
+                  </td>
+                  <td className="py-3 px-4 font-bold text-slate-300">{row.placa}</td>
+                  <td className="py-3 px-4 text-slate-400 font-sans">{row.cuenca}</td>
                   <td className="py-3 px-4 font-sans">
                     <span className="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 border border-slate-700">
-                      {r.fare}
+                      {row.tipo_tarifa_aplicada}
                     </span>
                   </td>
-                  <td className="py-3 px-4 text-slate-300 font-sans">{r.method}</td>
+                  <td className="py-3 px-4 text-slate-300 font-sans">{row.metodo_pago}</td>
                   <td className="py-3 px-4 text-right font-black text-emerald-400">
-                    S/ {r.amount.toFixed(2)}
+                    S/ {Number(row.monto).toFixed(2)}
                   </td>
                 </tr>
               ))}
+              {!loading && rows.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="py-8 px-4 text-center text-slate-400">
+                    No hay transacciones verificadas para el rango seleccionado.
+                  </td>
+                </tr>
+              )}
+              {loading && (
+                <tr>
+                  <td colSpan={7} className="py-8 px-4 text-center text-slate-400">
+                    Cargando transacciones desde el servidor…
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

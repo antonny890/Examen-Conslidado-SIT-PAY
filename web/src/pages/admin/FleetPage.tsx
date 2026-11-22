@@ -10,6 +10,7 @@ export const FleetPage: React.FC = () => {
   const [companies, setCompanies] = useState<any[]>([]);
   const [businessUnits, setBusinessUnits] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [selectedQR, setSelectedQR] = useState<{
     open: boolean;
@@ -49,12 +50,18 @@ export const FleetPage: React.FC = () => {
           setCompanies(companiesResponse.data.data.filter((company: any) => company.activo));
         }
       }
-    } catch (_) {} finally {
+    } catch (requestError: any) {
+      setError(
+        requestError.response?.data?.message ||
+          'No se pudo cargar la flota desde el servidor.',
+      );
+    } finally {
       setLoading(false);
     }
   };
 
   const handleOpenQR = async (v: any) => {
+    setError('');
     try {
       const res = await api.get(`/vehicles/${v.id}/qr`);
       if (res.data.success) {
@@ -66,11 +73,14 @@ export const FleetPage: React.FC = () => {
           vehicleId: v.id,
         });
       }
-    } catch (_) {}
+    } catch (requestError: any) {
+      setError(requestError.response?.data?.message || 'No se pudo cargar el código QR.');
+    }
   };
 
   const handleRegenerateQR = async () => {
     if (!selectedQR.vehicleId) return;
+    setError('');
     try {
       const res = await api.post(`/vehicles/${selectedQR.vehicleId}/regenerate-qr`);
       if (res.data.success) {
@@ -82,11 +92,14 @@ export const FleetPage: React.FC = () => {
         alert(`Código QR regenerado para la placa ${selectedQR.plate}.`);
         fetchVehicles();
       }
-    } catch (_) {}
+    } catch (requestError: any) {
+      setError(requestError.response?.data?.message || 'No se pudo regenerar el código QR.');
+    }
   };
 
   const handleCreateVehicle = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
     try {
       await api.post('/vehicles', {
         placa: newPlate,
@@ -97,9 +110,9 @@ export const FleetPage: React.FC = () => {
       setIsAddModalOpen(false);
       setNewPlate('');
       setNewModel('');
-      fetchVehicles();
-    } catch (_) {
-      alert('Error al registrar vehículo.');
+      await fetchVehicles();
+    } catch (requestError: any) {
+      setError(requestError.response?.data?.message || 'No se pudo registrar el vehículo.');
     }
   };
 
@@ -110,6 +123,11 @@ export const FleetPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {error && (
+        <p role="alert" className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-200">
+          {error}
+        </p>
+      )}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-white tracking-tight">Gestión de Flota y Códigos QR Fijos</h1>
@@ -215,6 +233,9 @@ export const FleetPage: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 text-slate-100 shadow-2xl">
             <h3 className="text-base font-bold text-white">Registrar Nuevo Vehículo al SIT</h3>
+            {error && (
+              <p role="alert" className="text-xs text-red-300">{error}</p>
+            )}
             <form onSubmit={handleCreateVehicle} className="space-y-3 text-xs">
               <div>
                 <label className="font-semibold text-slate-300">Número de Placa (Única)</label>

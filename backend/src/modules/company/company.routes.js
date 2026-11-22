@@ -12,6 +12,7 @@ router.use(authorizeRoles('ADMIN_EMPRESA', 'SUPER_ADMIN'));
 
 router.get('/dashboard', companyController.getCompanyDashboard);
 router.get('/business-units', companyController.getBusinessUnits);
+router.get('/report-transactions', companyController.listReportTransactions);
 router.post('/drivers', companyController.createDriver);
 router.get('/export-csv', companyController.exportReportCSV);
 

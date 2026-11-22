@@ -1,10 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Bus, Users } from 'lucide-react';
 import { api } from '../../services/api';
 
+interface SuperAdminDashboardData {
+  recaudacionHoy: {
+    monto: number;
+    pasajes: number;
+  };
+  recaudacionHistorica: {
+    monto: number;
+    pasajes: number;
+  };
+  metricas: {
+    totalUsuarios: number;
+    totalEmpresas: number;
+    totalVehiculos: number;
+    totalSolicitudesPendientes: number;
+  };
+}
+
 export const SuperAdminDashboardPage: React.FC = () => {
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<SuperAdminDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     fetchGlobalStats();
@@ -14,9 +31,16 @@ export const SuperAdminDashboardPage: React.FC = () => {
     try {
       const res = await api.get('/admin/dashboard');
       if (res.data.success) {
-        setData(res.data.data);
+        setData(res.data.data as SuperAdminDashboardData);
+      } else {
+        setError(res.data.message || 'El servidor no pudo cargar las métricas globales.');
       }
-    } catch (_) {} finally {
+    } catch (requestError: any) {
+      setError(
+        requestError.response?.data?.message ||
+          'No se pudieron cargar las métricas globales.',
+      );
+    } finally {
       setLoading(false);
     }
   };
@@ -30,17 +54,25 @@ export const SuperAdminDashboardPage: React.FC = () => {
           Fiscalización del SIT Arequipa
         </h1>
         <p className="text-xs text-slate-400">
-          Vista de evaluación local. Las métricas requieren conexión con el servidor y la base de datos.
+          Métricas cargadas desde el servidor y la base de datos del sistema.
         </p>
       </div>
+
+      {error && (
+        <p role="alert" className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-200">
+          {error}
+        </p>
+      )}
 
       {/* KPI Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-2xl space-y-1">
-          <div className="text-xs text-slate-400">Pagos bancarios confirmados</div>
-          <div className="text-xl font-black text-amber-300">No disponible</div>
+          <div className="text-xs text-slate-400">Recaudación verificada de hoy</div>
+          <div className="text-xl font-black text-amber-300">
+            {data ? `S/ ${Number(data.recaudacionHoy.monto).toFixed(2)}` : 'Sin datos'}
+          </div>
           <div className="text-[11px] text-slate-500 font-mono">
-            Integración bancaria pendiente
+            {data ? `${data.recaudacionHoy.pasajes} pasajes` : 'Sin información del servidor'}
           </div>
         </div>
 
@@ -49,7 +81,7 @@ export const SuperAdminDashboardPage: React.FC = () => {
           <div className="text-2xl font-black font-mono text-blue-400">
             {data?.metricas?.totalEmpresas ?? 'Sin datos'}{data?.metricas?.totalEmpresas != null ? ' Operadoras' : ''}
           </div>
-          <div className="text-[11px] text-slate-500">10 Cuencas (C2 a C11)</div>
+          <div className="text-[11px] text-slate-500">Empresas registradas</div>
         </div>
 
         <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-2xl space-y-1">
@@ -57,7 +89,7 @@ export const SuperAdminDashboardPage: React.FC = () => {
           <div className="text-2xl font-black font-mono text-purple-400">
             {data?.metricas?.totalVehiculos ?? 'Sin datos'}{data?.metricas?.totalVehiculos != null ? ' Vehículos' : ''}
           </div>
-          <div className="text-[11px] text-slate-500">Supervisados por MPA</div>
+          <div className="text-[11px] text-slate-500">Vehículos activos registrados</div>
         </div>
 
         <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-2xl space-y-1">
@@ -65,12 +97,12 @@ export const SuperAdminDashboardPage: React.FC = () => {
           <div className="text-2xl font-black font-mono text-white">
             {data?.metricas?.totalUsuarios ?? 'Sin datos'}
           </div>
-          <div className="text-[11px] text-slate-500">Pasajeros y Choferes</div>
+          <div className="text-[11px] text-slate-500">Cuentas registradas en el sistema</div>
         </div>
       </div>
 
-      <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-5 text-sm text-amber-200">
-        Los gráficos de recaudación se habilitarán cuando haya pagos validados por una entidad financiera. Esta pantalla no muestra datos simulados como resultados reales.
+      <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 text-xs text-slate-400">
+        Recaudación histórica: S/ {Number(data?.recaudacionHistorica.monto || 0).toFixed(2)} en {data?.recaudacionHistorica.pasajes ?? 0} pagos verificados.
       </div>
     </div>
   );
