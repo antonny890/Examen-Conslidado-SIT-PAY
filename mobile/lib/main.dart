@@ -56,7 +56,6 @@ class _SitPayMobileAppState extends State<SitPayMobileApp> {
 
   Future<void> _handleAuthLink(Uri uri) async {
     if (uri.scheme != 'sitpay' || uri.host != 'auth-callback') return;
-    if (!_handledLinks.add(uri.toString())) return;
 
     final parameters = <String, String>{...uri.queryParameters};
     if (uri.fragment.isNotEmpty) {
@@ -67,6 +66,20 @@ class _SitPayMobileAppState extends State<SitPayMobileApp> {
         return;
       }
     }
+
+    await _handleAuthParameters(parameters);
+  }
+
+  Future<void> _handleAuthParameters(
+    Map<String, String> parameters,
+  ) async {
+    final linkKey = parameters['access_token'] ??
+        parameters['token_hash'] ??
+        [
+          parameters['error_code'] ?? parameters['error'] ?? '',
+          parameters['error_description'] ?? '',
+        ].join('|');
+    if (!_handledLinks.add(linkKey)) return;
 
     final errorCode =
         (parameters['error_code'] ?? parameters['error'] ?? '').toLowerCase();
@@ -137,29 +150,13 @@ class _SitPayMobileAppState extends State<SitPayMobileApp> {
     if (routeName == null) return null;
 
     final uri = Uri.tryParse(routeName);
-    final fragment = uri?.fragment;
-    if (fragment == null || !fragment.contains('error')) return null;
+    if (uri == null) return null;
 
+    final parameters = <String, String>{...uri.queryParameters};
     try {
-      final parameters = Uri.splitQueryString(fragment);
-      final errorCode =
-          (parameters['error_code'] ?? parameters['error'] ?? '').toLowerCase();
-      final errorDescription =
-          (parameters['error_description'] ?? '').toLowerCase();
-      final expiredOrInvalid = errorCode.contains('expired') ||
-          errorCode.contains('invalid') ||
-          errorDescription.contains('expired') ||
-          errorDescription.contains('invalid');
-
-      return MaterialPageRoute<void>(
-        settings: settings,
-        builder: (_) => EmailVerificationScreen(
-          email: _authProvider.pendingRegistrationEmail ?? '',
-          initialErrorMessage: expiredOrInvalid
-              ? 'El enlace expiró o ya fue utilizado. Solicita uno nuevo y ábrelo pronto.'
-              : 'No se pudo confirmar el correo. Solicita un enlace nuevo.',
-        ),
-      );
+      if (uri.fragment.isNotEmpty) {
+        parameters.addAll(Uri.splitQueryString(uri.fragment));
+      }
     } on FormatException {
       return MaterialPageRoute<void>(
         settings: settings,
@@ -169,6 +166,24 @@ class _SitPayMobileAppState extends State<SitPayMobileApp> {
         ),
       );
     }
+
+    final hasAuthResponse = const {
+      'access_token',
+      'token_hash',
+      'error',
+      'error_code',
+      'error_description',
+    }.any(parameters.containsKey);
+    if (!hasAuthResponse) return null;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _handleAuthParameters(parameters);
+    });
+
+    return MaterialPageRoute<void>(
+      settings: settings,
+      builder: (_) => const _AuthLinkProcessingScreen(),
+    );
   }
 
   @override
@@ -197,6 +212,28 @@ class _SitPayMobileAppState extends State<SitPayMobileApp> {
           themeMode: themeModeProvider.themeMode,
           onGenerateRoute: _handleFlutterLinkRoute,
           home: const SplashScreen(),
+        ),
+      ),
+    );
+  }
+}
+
+class _AuthLinkProcessingScreen extends StatelessWidget {
+  const _AuthLinkProcessingScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Confirmando tu correo...'),
+            ],
+          ),
         ),
       ),
     );
