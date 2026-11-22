@@ -523,10 +523,27 @@ class AuthProvider extends ChangeNotifier {
     }
 
     try {
+      final imageBytes = await imageFile.readAsBytes();
+      try {
+        await _apiClient.refreshAccessToken();
+      } on StateError {
+        final refreshToken = await SecureStorageService.getRefreshToken();
+        if (refreshToken == null || refreshToken.isEmpty) {
+          _currentUser = null;
+          _isDemoMode = false;
+          await SecureStorageService.clearAll();
+          notifyListeners();
+          throw StateError(
+            'La sesión expiró o fue revocada. Inicia sesión nuevamente.',
+          );
+        }
+        rethrow;
+      }
+
       final response = await _apiClient.dio.put(
         '${ApiConstants.profile}/photo',
         data: {
-          'imageBase64': base64Encode(await imageFile.readAsBytes()),
+          'imageBase64': base64Encode(imageBytes),
           'mimeType': mimeType,
         },
       );
@@ -557,13 +574,16 @@ class AuthProvider extends ChangeNotifier {
       if (error.response?.statusCode == 401 &&
           serverMessage != null &&
           sessionErrors.contains(serverMessage)) {
-        await SecureStorageService.clearAll();
-        _currentUser = null;
-        _isDemoMode = false;
-        notifyListeners();
-        throw StateError(
-          'La sesión expiró o fue revocada. Inicia sesión nuevamente.',
-        );
+        final refreshToken = await SecureStorageService.getRefreshToken();
+        if (refreshToken == null || refreshToken.isEmpty) {
+          _currentUser = null;
+          _isDemoMode = false;
+          await SecureStorageService.clearAll();
+          notifyListeners();
+          throw StateError(
+            'La sesión expiró o fue revocada. Inicia sesión nuevamente.',
+          );
+        }
       }
       throw StateError(
         serverMessage ??

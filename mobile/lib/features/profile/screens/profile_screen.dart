@@ -639,20 +639,42 @@ class _ManageProfileScreenState extends State<_ManageProfileScreen> {
       final auth = context.read<AuthProvider>();
       final user = auth.currentUser;
       if (user == null) {
-        throw StateError('No hay una sesión activa para actualizar el perfil.');
+        _returnToLogin();
+        return;
       }
       final path = await LocalProfileStore.saveProfileImage(
         userId: user.id,
         image: image,
       );
-      await auth.uploadProfilePhoto(path);
       await auth.updateLocalProfile(profileImagePath: path);
+      try {
+        await auth.uploadProfilePhoto(path);
+      } on StateError {
+        if (!mounted) return;
+        if (context.read<AuthProvider>().currentUser == null) {
+          _returnToLogin();
+          return;
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Foto guardada en este celular. No se pudo sincronizar con el servidor.',
+            ),
+          ),
+        );
+        return;
+      }
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Foto actualizada en tu perfil.')),
       );
     } catch (error) {
       if (!mounted) return;
+      if (context.read<AuthProvider>().currentUser == null) {
+        _returnToLogin();
+        return;
+      }
       final message =
           error is StateError ? error.message.toString() : error.toString();
       ScaffoldMessenger.of(context).showSnackBar(
@@ -662,6 +684,13 @@ class _ManageProfileScreenState extends State<_ManageProfileScreen> {
         ),
       );
     }
+  }
+
+  void _returnToLogin() {
+    Navigator.of(context).pushAndRemoveUntil<void>(
+      MaterialPageRoute<void>(builder: (_) => const LoginScreen()),
+      (_) => false,
+    );
   }
 
   Future<void> _editAlias(UserModel user) async {

@@ -5,6 +5,8 @@ import '../storage/secure_storage.dart';
 /// Cliente HTTP Dio con interceptor para adjuntar tokens Bearer JWT
 /// y manejo centralizado de errores
 class ApiClient {
+  static final Map<String, Future<String?>> _refreshOperations = {};
+
   late final Dio dio;
 
   ApiClient({String? baseUrl}) {
@@ -33,37 +35,25 @@ class ApiClient {
           return handler.next(options);
         },
         onError: (DioException error, handler) async {
-          // Si el token expiró (401), intentar refresh token
           if (error.response?.statusCode == 401 &&
-              error.requestOptions.extra['skipAuthRefresh'] != true) {
+              error.requestOptions.extra['skipAuthRefresh'] != true &&
+              !error.requestOptions.path.startsWith('/auth/')) {
             final refreshToken = await SecureStorageService.getRefreshToken();
-            if (refreshToken != null) {
-              try {
-                final refreshResponse = await Dio().post(
-                  '${dio.options.baseUrl}${ApiConstants.refresh}',
-                  data: {'refreshToken': refreshToken},
-                );
-
-                if (refreshResponse.statusCode == 200) {
-                  final newAccessToken =
-                      refreshResponse.data['data']['tokens']['accessToken'];
-                  final newRefreshToken =
-                      refreshResponse.data['data']['tokens']['refreshToken'];
-
-                  await SecureStorageService.saveTokens(
-                    accessToken: newAccessToken,
-                    refreshToken: newRefreshToken,
-                  );
-
-                  // Reintentar la petición original con el nuevo token
-                  final originalRequest = error.requestOptions;
-                  originalRequest.headers['Authorization'] =
-                      'Bearer $newAccessToken';
-                  final response = await dio.fetch(originalRequest);
-                  return handler.resolve(response);
+            if (refreshToken != null && refreshToken.isNotEmpty) {
+              final newAccessToken = await _refreshSession(
+                dio.options.baseUrl,
+                refreshToken,
+              );
+              if (newAccessToken != null) {
+                final originalRequest = error.requestOptions;
+                originalRequest.headers['Authorization'] =
+                    'Bearer $newAccessToken';
+                originalRequest.extra['skipAuthRefresh'] = true;
+                try {
+                  return handler.resolve(await dio.fetch(originalRequest));
+                } on DioException catch (retryError) {
+                  return handler.next(retryError);
                 }
-              } catch (_) {
-                await SecureStorageService.clearAll();
               }
             }
           }
@@ -79,16 +69,75 @@ class ApiClient {
       throw StateError('No hay un token de renovación disponible.');
     }
 
-    final response = await Dio().post(
-      '${dio.options.baseUrl}${ApiConstants.refresh}',
-      data: {'refreshToken': refreshToken},
+    final accessToken = await _refreshSession(
+      dio.options.baseUrl,
+      refreshToken,
     );
-    final tokens = response.data['data']['tokens'] as Map<String, dynamic>;
-    final accessToken = tokens['accessToken'] as String;
-    await SecureStorageService.saveTokens(
-      accessToken: accessToken,
-      refreshToken: tokens['refreshToken'] as String,
-    );
+    if (accessToken == null) {
+      throw StateError(
+          'No se pudo renovar la sesión. Inicia sesión nuevamente.');
+    }
     return accessToken;
+  }
+
+  static Future<String?> _refreshSession(
+    String baseUrl,
+    String refreshToken,
+  ) {
+    final ongoing = _refreshOperations[refreshToken];
+    if (ongoing != null) return ongoing;
+
+    final operation = _performRefresh(baseUrl, refreshToken);
+    _refreshOperations[refreshToken] = operation;
+    return operation.whenComplete(() {
+      if (identical(_refreshOperations[refreshToken], operation)) {
+        _refreshOperations.remove(refreshToken);
+      }
+    });
+  }
+
+  static Future<String?> _performRefresh(
+    String baseUrl,
+    String refreshToken,
+  ) async {
+    try {
+      final response = await Dio(
+        BaseOptions(
+          connectTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 10),
+        ),
+      ).post(
+        '$baseUrl${ApiConstants.refresh}',
+        data: {'refreshToken': refreshToken},
+      );
+      final responseData = response.data;
+      if (responseData is! Map ||
+          responseData['data'] is! Map ||
+          responseData['data']['tokens'] is! Map) {
+        return null;
+      }
+
+      final tokens = responseData['data']['tokens'] as Map;
+      final accessToken = tokens['accessToken'];
+      final newRefreshToken = tokens['refreshToken'];
+      if (accessToken is! String ||
+          accessToken.isEmpty ||
+          newRefreshToken is! String ||
+          newRefreshToken.isEmpty) {
+        return null;
+      }
+
+      await SecureStorageService.saveTokens(
+        accessToken: accessToken,
+        refreshToken: newRefreshToken,
+      );
+      return accessToken;
+    } on DioException catch (error) {
+      if (error.response?.statusCode == 400 ||
+          error.response?.statusCode == 401) {
+        await SecureStorageService.clearAll();
+      }
+      return null;
+    }
   }
 }
