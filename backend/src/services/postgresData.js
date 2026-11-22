@@ -82,6 +82,7 @@ class SqlQuery {
   async get() {
     const rows = await this.buildQuery();
     const docs = rows.map((row) => ({
+      exists: true,
       id: String(row.id),
       data: () => {
         const { id, ...data } = row;
@@ -151,6 +152,7 @@ const createTransaction = (trx) => ({
     if (target instanceof SqlQuery) {
       const rows = await target.buildQuery();
       const docs = rows.map((row) => ({
+        exists: true,
         id: String(row.id),
         data: () => {
           const { id, ...data } = row;
