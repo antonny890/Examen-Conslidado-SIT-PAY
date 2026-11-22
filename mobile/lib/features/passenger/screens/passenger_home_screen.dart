@@ -57,6 +57,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
         if (type == null || (type != 'NORMAL' && type != 'UNIVERSITARIA')) {
           continue;
         }
+        if (_readAmount(fare['monto']) == null) continue;
 
         final startsAt = fare['vigencia_inicio']?.toString().substring(0, 10);
         final endsAt = fare['vigencia_fin']?.toString().substring(0, 10);
@@ -66,9 +67,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
         }
 
         final current = currentFares[type];
-        final fareId = int.tryParse(fare['id'].toString()) ?? 0;
-        final currentId = int.tryParse(current?['id']?.toString() ?? '') ?? -1;
-        if (current == null || fareId > currentId) {
+        if (current == null || _isNewerFare(fare, current)) {
           currentFares[type] = fare;
         }
       }
@@ -77,8 +76,8 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
       setState(() {
         _fares.clear();
         for (final type in ['NORMAL', 'UNIVERSITARIA']) {
-          final amount = currentFares[type]?['monto'];
-          if (amount is num) _fares[type] = amount.toDouble();
+          final amount = _readAmount(currentFares[type]?['monto']);
+          if (amount != null) _fares[type] = amount;
         }
         _isLoadingFares = false;
         if (_fares.length < 2) {
@@ -101,6 +100,26 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
         _fareError = 'No se pudieron cargar las tarifas actuales.';
       });
     }
+  }
+
+  double? _readAmount(dynamic amount) {
+    if (amount is num) return amount.toDouble();
+    if (amount is String) return double.tryParse(amount.trim());
+    return null;
+  }
+
+  bool _isNewerFare(
+    Map<String, dynamic> candidate,
+    Map<String, dynamic> current,
+  ) {
+    DateTime? readDate(dynamic value) =>
+        value is String ? DateTime.tryParse(value) : null;
+    final candidateDate =
+        readDate(candidate['updated_at']) ?? readDate(candidate['created_at']);
+    final currentDate =
+        readDate(current['updated_at']) ?? readDate(current['created_at']);
+    if (candidateDate == null || currentDate == null) return false;
+    return candidateDate.isAfter(currentDate);
   }
 
   Future<void> _loadFrequentCompanies() async {
