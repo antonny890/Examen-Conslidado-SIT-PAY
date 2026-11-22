@@ -328,6 +328,7 @@ class AuthProvider extends ChangeNotifier {
   Future<bool> confirmRegistrationEmailLink({
     String? accessToken,
     String? tokenHash,
+    String? email,
   }) async {
     _isLoading = true;
     _errorMessage = null;
@@ -339,6 +340,7 @@ class AuthProvider extends ChangeNotifier {
         data: {
           if (accessToken != null) 'accessToken': accessToken,
           if (tokenHash != null) 'tokenHash': tokenHash,
+          if (email != null) 'email': email.trim().toLowerCase(),
         },
         options: Options(
           headers: accessToken == null

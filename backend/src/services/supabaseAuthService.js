@@ -126,6 +126,12 @@ const issueSession = async (email) => {
   return sessionTokens(verified.session);
 };
 
+const getAuthUserById = async (userId) => {
+  const { data, error } = await supabaseAdmin.auth.admin.getUserById(userId);
+  if (error) throwAuthError(error);
+  return data.user;
+};
+
 const verifyAccessToken = async (token) => {
   const { data, error } = await supabaseAdmin.auth.getUser(token);
   if (error || !data.user) throwAuthError(error || new Error('Usuario del token no encontrado.'));
@@ -173,6 +179,7 @@ const auth = {
 
 module.exports = {
   auth,
+  getAuthUserById,
   issueSession,
   refreshSession,
   revokeSession,

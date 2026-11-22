@@ -717,39 +717,58 @@ const confirmRegistrationEmailLink = async (req, res, next) => {
   try {
     const accessToken = String(req.body?.accessToken || '').trim();
     const tokenHash = String(req.body?.tokenHash || '').trim();
-    if (!accessToken && !tokenHash) {
-      return res.status(400).json({
-        success: false,
-        code: 'EMAIL_LINK_INVALID',
-        message: 'El enlace no contiene una confirmación válida. Solicita uno nuevo.',
-      });
+    const email = normalizeEmail(req.body?.email);
+    let verifiedUser;
+
+    if (accessToken || tokenHash) {
+      try {
+        if (accessToken) {
+          const claims = await supabaseAuth.verifyAccessToken(accessToken);
+          if (claims.email_verified !== true) {
+            return res.status(400).json({
+              success: false,
+              code: 'EMAIL_LINK_NOT_CONFIRMED',
+              message: 'El enlace aún no confirma el correo. Ábrelo desde tu bandeja de entrada.',
+            });
+          }
+          verifiedUser = { id: claims.uid, email: claims.email };
+        } else {
+          const verification = await supabaseAuth.verifySignupEmailTokenHash(tokenHash);
+          verifiedUser = verification.user;
+        }
+      } catch (error) {
+        if (!(error.statusCode && error.statusCode < 500)) throw error;
+      }
     }
 
-    let verifiedUser;
-    try {
-      if (accessToken) {
-        const claims = await supabaseAuth.verifyAccessToken(accessToken);
-        if (claims.email_verified !== true) {
-          return res.status(400).json({
-            success: false,
-            code: 'EMAIL_LINK_NOT_CONFIRMED',
-            message: 'El enlace aún no confirma el correo. Ábrelo desde tu bandeja de entrada.',
-          });
+    if (!verifiedUser && email) {
+      const pendingUser = await getUserByEmail(email);
+      if (
+        pendingUser?.rol_codigo === 'PASAJERO' &&
+        pendingUser.estado === 'ACTIVO' &&
+        !pendingUser.deleted_at &&
+        normalizeEmail(pendingUser.email) === email
+      ) {
+        const authUser = await supabaseAuth.getAuthUserById(pendingUser.id);
+        if (
+          authUser?.email_confirmed_at &&
+          normalizeEmail(authUser.email) === email
+        ) {
+          verifiedUser = { id: pendingUser.id, email: authUser.email };
         }
-        verifiedUser = { id: claims.uid, email: claims.email };
-      } else {
-        const verification = await supabaseAuth.verifySignupEmailTokenHash(tokenHash);
-        verifiedUser = verification.user;
       }
-    } catch (error) {
-      if (error.statusCode && error.statusCode < 500) {
-        return res.status(400).json({
-          success: false,
-          code: 'EMAIL_LINK_INVALID_OR_EXPIRED',
-          message: 'El enlace expiró, ya fue utilizado o no es válido. Solicita uno nuevo.',
-        });
-      }
-      throw error;
+    }
+
+    if (!verifiedUser) {
+      return res.status(400).json({
+        success: false,
+        code: accessToken || tokenHash
+          ? 'EMAIL_LINK_INVALID_OR_EXPIRED'
+          : 'EMAIL_LINK_INVALID',
+        message: accessToken || tokenHash
+          ? 'El enlace expiró, ya fue utilizado o no es válido. Solicita uno nuevo.'
+          : 'El enlace no contiene una confirmación válida. Solicita uno nuevo.',
+      });
     }
 
     const user = verifiedUser?.id

@@ -90,6 +90,17 @@ class _SitPayMobileAppState extends State<SitPayMobileApp> {
           errorCode.contains('invalid') ||
           errorDescription.contains('expired') ||
           errorDescription.contains('invalid');
+      if (expiredOrInvalid) {
+        final alreadyConfirmed =
+            await _authProvider.confirmRegistrationEmailLink(
+          email: _authProvider.pendingRegistrationEmail,
+        );
+        if (!mounted) return;
+        if (alreadyConfirmed) {
+          _showConfirmationSuccess();
+          return;
+        }
+      }
       _showLinkError(
         expiredOrInvalid
             ? 'El enlace expiró, ya fue utilizado o no es válido. Solicita uno nuevo.'
@@ -111,25 +122,30 @@ class _SitPayMobileAppState extends State<SitPayMobileApp> {
     final confirmed = await _authProvider.confirmRegistrationEmailLink(
       accessToken: accessToken,
       tokenHash: tokenHash,
+      email: _authProvider.pendingRegistrationEmail,
     );
     if (!mounted) return;
 
     if (confirmed) {
-      _navigatorKey.currentState?.pushAndRemoveUntil(
-        MaterialPageRoute(
-          builder: (_) => const LoginScreen(
-            initialMessage:
-                'Correo confirmado. Tu registro está completo; inicia sesión.',
-          ),
-        ),
-        (_) => false,
-      );
+      _showConfirmationSuccess();
     } else {
       _showLinkError(
         _authProvider.errorMessage ??
             'No se pudo confirmar el correo. Solicita un enlace nuevo.',
       );
     }
+  }
+
+  void _showConfirmationSuccess() {
+    _navigatorKey.currentState?.pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => const LoginScreen(
+          initialMessage:
+              'Correo confirmado. Tu registro está completo; inicia sesión.',
+        ),
+      ),
+      (_) => false,
+    );
   }
 
   void _showLinkError(String message) {
@@ -176,8 +192,10 @@ class _SitPayMobileAppState extends State<SitPayMobileApp> {
     }.any(parameters.containsKey);
     if (!hasAuthResponse) return null;
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _handleAuthParameters(parameters);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await _authProvider.restorePendingRegistrationEmail();
+      await _handleAuthParameters(parameters);
     });
 
     return MaterialPageRoute<void>(
