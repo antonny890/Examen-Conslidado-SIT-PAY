@@ -22,9 +22,23 @@ const TABLES = new Set([
   'vehiculos',
 ]);
 
-const normalizeData = (data) =>
+const JSON_COLUMNS = {
+  auditoria_logs: ['valores_anteriores', 'valores_nuevos'],
+  consultas_dni: ['datos_proveedor', 'datos_proporcionados'],
+  notificaciones: ['payload'],
+  perfiles: ['identidad'],
+  tarifas: ['dias_semana_aplicables'],
+};
+
+const prepareColumnValue = (table, key, value) => {
+  if (value == null) return null;
+  if (!JSON_COLUMNS[table]?.includes(key) || typeof value === 'string') return value;
+  return JSON.stringify(value);
+};
+
+const normalizeData = (table, data) =>
   Object.fromEntries(
-    Object.entries(data).map(([key, value]) => [key, value === undefined ? null : value]),
+    Object.entries(data).map(([key, value]) => [key, prepareColumnValue(table, key, value)]),
   );
 
 class SqlSnapshot {
@@ -115,21 +129,21 @@ class SqlRowReference {
   }
 
   async create(data) {
-    const row = { ...normalizeData(data), id: data.id || this.id };
+    const row = { ...normalizeData(this.tableName, data), id: data.id || this.id };
     await this.executor(this.tableName).insert(row);
     return new SqlSnapshot(row);
   }
 
   async set(data, options = {}) {
-    const row = { ...normalizeData(data), id: data.id || this.id };
+    const row = { ...normalizeData(this.tableName, data), id: data.id || this.id };
     let query = this.executor(this.tableName).insert(row);
-    if (options.merge) query = query.onConflict('id').merge(normalizeData(data));
+    if (options.merge) query = query.onConflict('id').merge(normalizeData(this.tableName, data));
     await query;
     return new SqlSnapshot(row);
   }
 
   async update(data) {
-    const values = normalizeData(data);
+    const values = normalizeData(this.tableName, data);
     delete values.id;
     const updated = await this.executor(this.tableName)
       .where({ id: this.id })
@@ -164,15 +178,15 @@ const createTransaction = (trx) => ({
     throw new TypeError('La transacción requiere una fila o consulta SQL.');
   },
   create: (reference, data) => trx(reference.tableName)
-    .insert({ ...normalizeData(data), id: data.id || reference.id }),
+    .insert({ ...normalizeData(reference.tableName, data), id: data.id || reference.id }),
   set: (reference, data, options = {}) => {
-    const row = { ...normalizeData(data), id: data.id || reference.id };
+    const row = { ...normalizeData(reference.tableName, data), id: data.id || reference.id };
     let query = trx(reference.tableName).insert(row);
-    if (options.merge) query = query.onConflict('id').merge(normalizeData(data));
+    if (options.merge) query = query.onConflict('id').merge(normalizeData(reference.tableName, data));
     return query;
   },
   update: (reference, data) => {
-    const values = normalizeData(data);
+    const values = normalizeData(reference.tableName, data);
     delete values.id;
     return trx(reference.tableName).where({ id: reference.id }).update(values);
   },

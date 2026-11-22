@@ -62,15 +62,21 @@ const createFare = async (req, res, next) => {
 
     const now = new Date();
     const reference = db.collection('tarifas').doc();
+    const isUniversity = type === 'UNIVERSITARIA';
+    const weekdays = ['LUNES', 'MARTES', 'MIERCOLES', 'JUEVES', 'VIERNES', 'SABADO'];
     const fare = {
       nombre: String(nombre).trim(),
       tipo_pasajero: type,
       monto: Number(monto),
       porcentaje_descuento: Number(porcentajeDescuento || 0),
-      hora_inicio: horaInicio || '05:00:00',
+      hora_inicio: horaInicio || (isUniversity ? '05:00:00' : '00:00:00'),
       hora_fin: horaFin || '23:59:59',
-      dias_semana_aplicables: diasSemana || ['LUNES', 'MARTES', 'MIERCOLES', 'JUEVES', 'VIERNES', 'SABADO'],
-      solo_dias_laborables: soloDiasLaborables !== undefined ? Boolean(soloDiasLaborables) : true,
+      dias_semana_aplicables: Array.isArray(diasSemana) && diasSemana.length
+        ? diasSemana
+        : (isUniversity ? weekdays : ['DOMINGO', ...weekdays]),
+      solo_dias_laborables: soloDiasLaborables !== undefined
+        ? Boolean(soloDiasLaborables)
+        : isUniversity,
       vigencia_inicio: vigenciaInicio || now.toISOString().slice(0, 10),
       activo: true,
       created_at: now,
