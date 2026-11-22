@@ -221,7 +221,7 @@ const resolveClaim = async (req, res, next) => {
       mensaje: `Tu reclamo ${claim.codigo_reclamo} ha sido atendido: Estado ${status}.`,
       tipo: 'RECLAMO',
       payload: { codigoReclamo: claim.codigo_reclamo, estado: status },
-      leida: false,
+      leido: false,
       created_at: now,
       updated_at: now,
     });
