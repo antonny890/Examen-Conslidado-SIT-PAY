@@ -85,7 +85,7 @@ const createFare = async (req, res, next) => {
         conflict.statusCode = 409;
         throw conflict;
       }
-      transaction.create(reference, fare);
+      await transaction.create(reference, fare);
     });
 
     const created = { id: reference.id, ...fare };
@@ -153,7 +153,7 @@ const updateFare = async (req, res, next) => {
           throw conflict;
         }
       }
-      transaction.update(db.collection('tarifas').doc(id), updateData);
+      await transaction.update(db.collection('tarifas').doc(id), updateData);
     });
 
     const updated = { ...previous, ...updateData };

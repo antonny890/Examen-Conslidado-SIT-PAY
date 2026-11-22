@@ -93,7 +93,7 @@ const reserveDni = async (dni) => {
   const reference = db.collection('consultas_dni').doc(dniHash);
   const reservationId = crypto.randomUUID();
   await db.runTransaction(async (transaction) => {
-    transaction.set(reference, {
+    await transaction.set(reference, {
       usuario_id: null,
       reservation_id: reservationId,
       reservation_expires_at: new Date(Date.now() + 5 * 60 * 1000),
@@ -107,7 +107,7 @@ const releaseDniReservation = async ({ reference, reservationId }) => {
   await db.runTransaction(async (transaction) => {
     const snapshot = await transaction.get(reference);
     if (snapshot.exists && snapshot.data().reservation_id === reservationId) {
-      transaction.update(reference, {
+      await transaction.update(reference, {
         reservation_id: null,
         reservation_expires_at: null,
         updated_at: new Date(),
@@ -118,7 +118,7 @@ const releaseDniReservation = async ({ reference, reservationId }) => {
 
 const linkDniToUser = async ({ reference, uid }) => {
   await db.runTransaction(async (transaction) => {
-    transaction.set(reference, {
+    await transaction.set(reference, {
       usuario_id: uid,
       reservation_id: null,
       reservation_expires_at: null,

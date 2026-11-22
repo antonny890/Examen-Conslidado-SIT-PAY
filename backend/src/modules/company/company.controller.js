@@ -166,7 +166,7 @@ const createDriver = async (req, res, next) => {
         conflict.code = 'VEHICLE_ASSIGNMENT_CONFLICT';
         throw conflict;
       }
-      transaction.create(driverRef, {
+      await transaction.create(driverRef, {
         usuario_id: createdUser.id,
         empresa_id: company.id,
         vehiculo_id: vehicle.id,

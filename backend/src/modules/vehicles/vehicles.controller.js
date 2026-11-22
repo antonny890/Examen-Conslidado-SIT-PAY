@@ -250,8 +250,8 @@ const createVehicle = async (req, res, next) => {
           conflict.code = 'PLATE_ALREADY_REGISTERED';
           throw conflict;
         }
-        transaction.create(vehicleRef, vehicleData);
-        transaction.create(plateIndexRef, { vehiculo_id: vehicleRef.id, placa: cleanPlate });
+        await transaction.create(vehicleRef, vehicleData);
+        await transaction.create(plateIndexRef, { vehiculo_id: vehicleRef.id, placa: cleanPlate });
       });
     } catch (error) {
       if (error.code === 'PLATE_ALREADY_REGISTERED') {

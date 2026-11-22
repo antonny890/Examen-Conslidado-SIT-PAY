@@ -137,7 +137,7 @@ const beginPayment = async (req, res, next) => {
         return { id: current.id, ...current.data() };
       }
       created = true;
-      transaction.create(transactionRef, record);
+      await transaction.create(transactionRef, record);
       return { id: transactionRef.id, ...record };
     });
 

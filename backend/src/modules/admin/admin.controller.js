@@ -128,12 +128,12 @@ const createCompany = async (req, res, next) => {
           conflict.code = 'RUC_ALREADY_REGISTERED';
           throw conflict;
         }
-        transaction.create(companyRef, {
+        await transaction.create(companyRef, {
           ...companyData,
           created_at: now,
           updated_at: now,
         });
-        transaction.create(rucIndexRef, { empresa_id: companyRef.id, ruc: cleanRuc });
+        await transaction.create(rucIndexRef, { empresa_id: companyRef.id, ruc: cleanRuc });
       });
     } catch (error) {
       if (error.code === 'RUC_ALREADY_REGISTERED') {
