@@ -117,12 +117,19 @@ class _PaymentScreenState extends State<PaymentScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) {
-        return Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+        return SafeArea(
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                24,
+                24,
+                24,
+                24 + MediaQuery.viewInsetsOf(ctx).bottom,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
               Center(
                 child: Container(
                   width: 48,
@@ -150,56 +157,26 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 ),
                 child: Column(
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Placa del Vehículo:',
-                            style: TextStyle(color: Colors.grey)),
-                        Text(
-                          vehiculo?['placa'] ?? identifier,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 16),
-                        ),
-                      ],
+                    _PaymentDetailRow(
+                      label: 'Placa del vehículo:',
+                      value: (vehiculo?['placa'] ?? identifier).toString(),
                     ),
                     const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Empresa:',
-                            style: TextStyle(color: Colors.grey)),
-                        Text(
-                          vehiculo?['empresa'] ?? 'SIT Arequipa',
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ],
+                    _PaymentDetailRow(
+                      label: 'Empresa:',
+                      value: (vehiculo?['empresa'] ?? 'SIT Arequipa').toString(),
                     ),
                     const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Unidad / Cuenca SIT:',
-                            style: TextStyle(color: Colors.grey)),
-                        Text(
-                          vehiculo?['cuenca'] ?? 'No disponible',
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ],
+                    _PaymentDetailRow(
+                      label: 'Unidad / Cuenca SIT:',
+                      value:
+                          (vehiculo?['cuenca'] ?? 'No disponible').toString(),
                     ),
                     if (vehiculo?['numeroUnidad'] != null) ...[
                       const SizedBox(height: 8),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Unidad:',
-                            style: TextStyle(color: Colors.grey),
-                          ),
-                          Text(
-                            vehiculo['numeroUnidad'],
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                        ],
+                      _PaymentDetailRow(
+                        label: 'Unidad:',
+                        value: vehiculo['numeroUnidad'].toString(),
                       ),
                     ],
                     if (vehiculo?['modelo'] is String &&
@@ -221,25 +198,15 @@ class _PaymentScreenState extends State<PaymentScreen> {
                       const SizedBox(height: 8),
                       _PaymentDetailRow(
                         label: 'Capacidad:',
-                        value:
-                            '${vehiculo['capacidadPasajeros']} pasajeros',
+                        value: '${vehiculo['capacidadPasajeros']} pasajeros',
                       ),
                     ],
                     if (vehiculo?['choferAlias'] is String &&
                         (vehiculo['choferAlias'] as String).isNotEmpty) ...[
                       const SizedBox(height: 8),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Alias del conductor:',
-                            style: TextStyle(color: Colors.grey),
-                          ),
-                          Text(
-                            vehiculo['choferAlias'],
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                        ],
+                      _PaymentDetailRow(
+                        label: 'Alias del conductor:',
+                        value: vehiculo['choferAlias'] as String,
                       ),
                     ],
                   ],
@@ -259,25 +226,36 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          tarifa?['tipoTarifaAplicada'] == 'NORMAL'
-                              ? 'Tarifa Normal'
-                              : 'Medio Pasaje Acreditado (50%)',
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 13),
-                        ),
-                        const SizedBox(height: 2),
-                        const Text('Tarifa estimada; aún no cobrada',
-                            style: TextStyle(fontSize: 11, color: Colors.grey)),
-                      ],
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            tarifa?['tipoTarifaAplicada'] == 'NORMAL'
+                                ? 'Tarifa Normal'
+                                : 'Medio Pasaje Acreditado (50%)',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          const Text(
+                            'Tarifa estimada; aún no cobrada',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 11, color: Colors.grey),
+                          ),
+                        ],
+                      ),
                     ),
+                    const SizedBox(width: 12),
                     Text(
                       'S/ ${monto.toStringAsFixed(2)}',
                       style: const TextStyle(
-                        fontSize: 26,
+                        fontSize: 22,
                         fontWeight: FontWeight.w900,
                         color: Color(0xFF10B981),
                       ),
@@ -336,7 +314,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 ),
               ],
               const SizedBox(height: 16),
-            ],
+                ],
+              ),
+            ),
           ),
         );
       },
@@ -649,14 +629,25 @@ class _PaymentDetailRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: const TextStyle(color: Colors.grey)),
-        Flexible(
+        Expanded(
+          flex: 2,
+          child: Text(
+            label,
+            style: const TextStyle(color: Colors.grey),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          flex: 3,
           child: Text(
             value,
             textAlign: TextAlign.end,
             style: const TextStyle(fontWeight: FontWeight.w600),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
         ),
       ],

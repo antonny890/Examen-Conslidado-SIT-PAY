@@ -6,6 +6,7 @@ const {
 const { db } = require('../../services/postgresData');
 const { calculateApplicableFare } = require('../../services/fareEngine');
 const { emitPaymentConfirmationToDriver } = require('../../sockets/socketHandler');
+const { idempotentTransactionId } = require('../../utils/idempotentTransactionId');
 
 const normalizePlate = (plate) => {
   const cleanPlate = plate.toUpperCase().trim().replace(/\s+/g, '');
@@ -95,9 +96,7 @@ const beginPayment = async (req, res, next) => {
     const driver = assignments[0] || null;
     const profile = await getDocument('perfiles', req.user.id);
     const operationKey = idempotencyKey || crypto.randomUUID();
-    const transactionId = crypto.createHash('sha256')
-      .update(`${req.user.id}:${operationKey}`)
-      .digest('hex');
+    const transactionId = idempotentTransactionId(req.user.id, operationKey);
     const transactionRef = db.collection('transacciones').doc(transactionId);
     const now = new Date();
     const ticketCode = `BOL-${now.toISOString().slice(0, 10).replaceAll('-', '')}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;

@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -30,7 +32,16 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
   @override
   void initState() {
     super.initState();
+    _cardNumber.text = _generateTestCardNumber();
     _loadMethods();
+  }
+
+  String _generateTestCardNumber() {
+    final random = Random.secure();
+    final digits = List.generate(12, (_) => random.nextInt(10)).join();
+    final number = '9999$digits';
+    return '${number.substring(0, 4)}-${number.substring(4, 8)}-'
+        '${number.substring(8, 12)}-${number.substring(12)}';
   }
 
   @override
@@ -78,7 +89,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
   Future<void> _addMethod() async {
     if (!_formKey.currentState!.validate()) return;
     final month = int.parse(_month.text);
-    final year = int.parse(_year.text);
+    final year = 2000 + int.parse(_year.text);
     setState(() {
       _isSaving = true;
       _errorMessage = null;
@@ -100,7 +111,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
       });
       return;
     }
-    _cardNumber.clear();
+    _cardNumber.text = _generateTestCardNumber();
     _cvv.clear();
     _month.clear();
     _year.clear();
@@ -228,20 +239,24 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _cardNumber,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly,
-                    LengthLimitingTextInputFormatter(16),
-                  ],
-                  decoration: const InputDecoration(
-                    labelText: 'Número de tarjeta de prueba',
-                    hintText: '9999999999999999',
+                  readOnly: true,
+                  decoration: InputDecoration(
+                    labelText: 'Número de tarjeta simulada',
                     prefixIcon: Icon(Icons.credit_card_outlined),
+                    suffixIcon: IconButton(
+                      tooltip: 'Generar otro número',
+                      onPressed: () => setState(
+                        () => _cardNumber.text = _generateTestCardNumber(),
+                      ),
+                      icon: const Icon(Icons.refresh_rounded),
+                    ),
                   ),
                   validator: (value) =>
-                      value != null && RegExp(r'^9999\d{12}$').hasMatch(value)
+                      value != null &&
+                              RegExp(r'^9999-\d{4}-\d{4}-\d{4}$')
+                                  .hasMatch(value)
                           ? null
-                          : 'Usa 16 dígitos que comiencen con 9999.',
+                          : 'Genera un número simulado válido.',
                 ),
                 const SizedBox(height: 12),
                 Row(
@@ -255,7 +270,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
                           LengthLimitingTextInputFormatter(2),
                         ],
                         decoration: const InputDecoration(
-                          labelText: 'Mes (MM)',
+                          labelText: 'Mes (1-12)',
                         ),
                         validator: (value) {
                           final month = int.tryParse(value ?? '');
@@ -272,39 +287,50 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
                         keyboardType: TextInputType.number,
                         inputFormatters: [
                           FilteringTextInputFormatter.digitsOnly,
-                          LengthLimitingTextInputFormatter(4),
+                          LengthLimitingTextInputFormatter(2),
                         ],
                         decoration: const InputDecoration(
-                          labelText: 'Año (AAAA)',
+                          labelText: 'Año (2 dígitos)',
                         ),
                         validator: (value) {
                           final year = int.tryParse(value ?? '');
+                          final month = int.tryParse(_month.text);
+                          final currentDate = DateTime.now();
+                          final expiryYear = year == null ? null : 2000 + year;
                           return year != null &&
-                                  value?.length == 4 &&
-                                  year >= DateTime.now().year
+                                  value?.length == 2 &&
+                                  month != null &&
+                                  expiryYear != null &&
+                                  (expiryYear > currentDate.year ||
+                                      (expiryYear == currentDate.year &&
+                                          month >= currentDate.month))
                               ? null
                               : 'Año inválido';
                         },
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextFormField(
-                        controller: _cvv,
-                        keyboardType: TextInputType.number,
-                        obscureText: true,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                          LengthLimitingTextInputFormatter(4),
-                        ],
-                        decoration: const InputDecoration(labelText: 'CVV'),
-                        validator: (value) => value != null &&
-                                RegExp(r'^\d{3,4}$').hasMatch(value)
-                            ? null
-                            : '3 o 4 dígitos',
-                      ),
-                    ),
                   ],
+                ),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: SizedBox(
+                    width: 160,
+                    child: TextFormField(
+                      controller: _cvv,
+                      keyboardType: TextInputType.number,
+                      obscureText: true,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        LengthLimitingTextInputFormatter(4),
+                      ],
+                      decoration: const InputDecoration(labelText: 'CVV'),
+                      validator: (value) => value != null &&
+                              RegExp(r'^\d{3,4}$').hasMatch(value)
+                          ? null
+                          : '3 o 4 dígitos',
+                    ),
+                  ),
                 ),
                 if (_errorMessage != null) ...[
                   const SizedBox(height: 12),
