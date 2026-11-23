@@ -115,7 +115,7 @@ class _FaceVerificationScreenState extends State<FaceVerificationScreen>
         ResolutionPreset.medium,
         enableAudio: false,
         imageFormatGroup: Platform.isAndroid
-            ? ImageFormatGroup.nv21
+            ? ImageFormatGroup.yuv420
             : ImageFormatGroup.bgra8888,
       );
       _cameraController = controller;
@@ -132,14 +132,19 @@ class _FaceVerificationScreenState extends State<FaceVerificationScreen>
         _guidance = 'Centra tu rostro y parpadea o gira suavemente la cabeza.';
       });
     } on CameraException catch (error) {
+      debugPrint('Camera initialization failed: $error');
       if (!mounted) return;
       setState(() {
-        _cameraError = error.description ??
-            'No se pudo acceder a la cámara. Revisa los permisos del dispositivo.';
+        _cameraError =
+            'No se pudo acceder a la cámara. Revisa los permisos e inténtalo nuevamente.';
       });
     } catch (error) {
+      debugPrint('Camera initialization failed: $error');
       if (!mounted) return;
-      setState(() => _cameraError = error.toString());
+      setState(() {
+        _cameraError =
+            'No se pudo iniciar la cámara. Revisa los permisos e inténtalo nuevamente.';
+      });
     } finally {
       if (mounted) setState(() => _isInitializing = false);
     }
@@ -201,22 +206,84 @@ class _FaceVerificationScreenState extends State<FaceVerificationScreen>
     final rotation = InputImageRotationValue.fromRawValue(rotationDegrees);
     final format = InputImageFormatValue.fromRawValue(image.format.raw);
     if (rotation == null || format == null || image.planes.isEmpty) return null;
-    if (Platform.isAndroid && format != InputImageFormat.nv21) return null;
-    if (Platform.isIOS && format != InputImageFormat.bgra8888) return null;
 
-    final bytes = BytesBuilder(copy: false);
-    for (final plane in image.planes) {
-      bytes.add(plane.bytes);
+    late final Uint8List bytes;
+    late final InputImageFormat inputFormat;
+    late final int bytesPerRow;
+    if (Platform.isAndroid) {
+      if (format == InputImageFormat.yuv_420_888 ||
+          image.format.group == ImageFormatGroup.yuv420) {
+        final converted = _convertYuv420ToNv21(image);
+        if (converted == null) return null;
+        bytes = converted;
+        inputFormat = InputImageFormat.nv21;
+        bytesPerRow = image.width;
+      } else if (format == InputImageFormat.nv21 &&
+          image.planes.length == 1) {
+        bytes = image.planes.first.bytes;
+        inputFormat = format;
+        bytesPerRow = image.planes.first.bytesPerRow;
+      } else {
+        return null;
+      }
+    } else {
+      if (format != InputImageFormat.bgra8888 ||
+          image.planes.length != 1) {
+        return null;
+      }
+      bytes = image.planes.first.bytes;
+      inputFormat = format;
+      bytesPerRow = image.planes.first.bytesPerRow;
     }
+
     return InputImage.fromBytes(
-      bytes: bytes.toBytes(),
+      bytes: bytes,
       metadata: InputImageMetadata(
         size: Size(image.width.toDouble(), image.height.toDouble()),
         rotation: rotation,
-        format: format,
-        bytesPerRow: image.planes.first.bytesPerRow,
+        format: inputFormat,
+        bytesPerRow: bytesPerRow,
       ),
     );
+  }
+
+  Uint8List? _convertYuv420ToNv21(CameraImage image) {
+    if (image.planes.length != 3) return null;
+
+    final yPlane = image.planes[0];
+    final uPlane = image.planes[1];
+    final vPlane = image.planes[2];
+    final chromaWidth = (image.width + 1) ~/ 2;
+    final chromaHeight = (image.height + 1) ~/ 2;
+    final ySize = image.width * image.height;
+    final output = Uint8List(ySize + 2 * chromaWidth * chromaHeight);
+    var outputIndex = 0;
+
+    for (var row = 0; row < image.height; row++) {
+      final rowOffset = row * yPlane.bytesPerRow;
+      for (var column = 0; column < image.width; column++) {
+        final sourceIndex = rowOffset + column * (yPlane.bytesPerPixel ?? 1);
+        if (sourceIndex >= yPlane.bytes.length) return null;
+        output[outputIndex++] = yPlane.bytes[sourceIndex];
+      }
+    }
+
+    for (var row = 0; row < chromaHeight; row++) {
+      final uRowOffset = row * uPlane.bytesPerRow;
+      final vRowOffset = row * vPlane.bytesPerRow;
+      for (var column = 0; column < chromaWidth; column++) {
+        final uIndex = uRowOffset + column * (uPlane.bytesPerPixel ?? 1);
+        final vIndex = vRowOffset + column * (vPlane.bytesPerPixel ?? 1);
+        if (uIndex >= uPlane.bytes.length ||
+            vIndex >= vPlane.bytes.length) {
+          return null;
+        }
+        output[outputIndex++] = vPlane.bytes[vIndex];
+        output[outputIndex++] = uPlane.bytes[uIndex];
+      }
+    }
+
+    return output;
   }
 
   Future<void> _processCameraFrame(CameraImage image) async {
@@ -244,6 +311,9 @@ class _FaceVerificationScreenState extends State<FaceVerificationScreen>
     try {
       final faces = await _faceDetector.processImage(inputImage);
       if (!mounted) return;
+      if (_cameraError != null) {
+        setState(() => _cameraError = null);
+      }
       if (faces.length != 1) {
         _resetLiveness();
         setState(() {
@@ -303,8 +373,12 @@ class _FaceVerificationScreenState extends State<FaceVerificationScreen>
                     : 'Mantén un solo rostro y termina el movimiento para continuar.';
       });
     } catch (error) {
+      debugPrint('Face detection frame failed: $error');
       if (mounted) {
-        setState(() => _cameraError = 'No se pudo analizar la cámara: $error');
+        setState(() {
+          _cameraError =
+              'No se pudo analizar la imagen. Reinicia la cámara e inténtalo nuevamente.';
+        });
       }
     } finally {
       _isProcessingFrame = false;
@@ -361,9 +435,11 @@ class _FaceVerificationScreenState extends State<FaceVerificationScreen>
         await controller.startImageStream(_processCameraFrame);
       }
     } catch (error) {
+      debugPrint('Selfie validation failed: $error');
       if (!mounted) return;
       setState(() {
-        _cameraError = 'No se pudo completar la selfie: $error';
+        _cameraError =
+            'No se pudo revisar la selfie. Inténtalo nuevamente.';
         _isCapturing = false;
       });
     }
