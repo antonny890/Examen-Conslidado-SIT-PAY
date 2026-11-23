@@ -10,7 +10,6 @@ interface ReportRow {
   tipo_tarifa_aplicada: string;
   monto: number;
   metodo_pago: string;
-  pago_simulado: boolean;
 }
 
 const formatDateInput = (date: Date) => {
@@ -102,7 +101,7 @@ export const ReportsPage: React.FC = () => {
         <div>
           <h1 className="text-xl font-bold text-white tracking-tight">Reportes de Recaudación y Liquidación</h1>
           <p className="text-xs text-slate-400">
-            Consulta pagos registrados por rango de fechas y expórtalos a CSV. Los pagos de este prototipo son simulados.
+            Consulta los pagos registrados por rango de fechas y expórtalos a CSV.
           </p>
         </div>
         <button
@@ -183,7 +182,7 @@ export const ReportsPage: React.FC = () => {
                   <td className="py-3 px-4 text-slate-300 font-sans">{row.metodo_pago}</td>
                   <td className="py-3 px-4">
                     <span className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-300">
-                      {row.pago_simulado ? 'SIMULADO' : 'VERIFICADO'}
+                      PAGADO
                     </span>
                   </td>
                   <td className="py-3 px-4 text-right font-black text-emerald-400">

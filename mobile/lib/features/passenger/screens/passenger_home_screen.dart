@@ -172,7 +172,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
       body: IndexedStack(
         index: _selectedTab,
         children: [
-          const TicketHistoryScreen(),
+          TicketHistoryScreen(isActive: _selectedTab == 0),
           _buildHomeContent(context, auth, user, isDark),
           const ProfileScreen(showBackButton: false),
         ],

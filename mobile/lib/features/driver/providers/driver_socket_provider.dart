@@ -137,7 +137,6 @@ class DriverSocketProvider extends ChangeNotifier {
               : 'Pasajero',
           'alias': alias is String ? alias.trim() : '',
           'hora': payment['hora'] is String ? payment['hora'] as String : '',
-          'simulado': payment['simulado'] == true ? 'true' : 'false',
           'codigoBoleta': code,
           'fechaPago': payment['fechaPago']?.toString() ?? '',
         };
@@ -230,7 +229,6 @@ class DriverSocketProvider extends ChangeNotifier {
     final Map<String, dynamic> payload = Map<String, dynamic>.from(data);
     if (!_recordTurnPayment(payload)) return;
     final alias = payload['pasajeroAlias'];
-    final isSimulated = payload['simulado'] == true;
     final pasajeroNombre =
         alias is String && alias.trim().isNotEmpty ? alias.trim() : 'Pasajero';
     final String hora = payload['hora'] ??
@@ -238,11 +236,8 @@ class DriverSocketProvider extends ChangeNotifier {
 
     _activePaymentAlert = {
       'mensaje': alias is String && alias.trim().isNotEmpty
-          ? '$pasajeroNombre ${isSimulated ? 'simuló' : 'realizó'} el pago correspondiente'
-          : isSimulated
-              ? 'Se simuló un pago de pasaje'
-              : 'Se confirmó un pago',
-      'simulado': isSimulated ? 'true' : 'false',
+          ? '$pasajeroNombre pagó el pasaje'
+          : 'Se registró el pago del pasaje',
       'pasajero': pasajeroNombre,
       'hora': hora,
     };
@@ -270,7 +265,6 @@ class DriverSocketProvider extends ChangeNotifier {
     }
 
     final alias = payload['pasajeroAlias'];
-    final isSimulated = payload['simulado'] == true;
     final pasajeroNombre =
         alias is String && alias.trim().isNotEmpty ? alias.trim() : 'Pasajero';
     final hour = payload['hora'];
@@ -281,7 +275,6 @@ class DriverSocketProvider extends ChangeNotifier {
       'nombre': pasajeroNombre,
       'alias': alias is String ? alias.trim() : '',
       'hora': time,
-      'simulado': isSimulated ? 'true' : 'false',
       'codigoBoleta': ticketCode,
       'fechaPago': payload['timestamp']?.toString() ?? '',
     });

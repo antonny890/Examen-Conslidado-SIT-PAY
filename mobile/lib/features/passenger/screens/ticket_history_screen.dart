@@ -7,7 +7,12 @@ import 'ticket_detail_screen.dart';
 
 /// Historial de Boletas Digitales del Pasajero
 class TicketHistoryScreen extends StatefulWidget {
-  const TicketHistoryScreen({super.key});
+  const TicketHistoryScreen({
+    super.key,
+    this.isActive = true,
+  });
+
+  final bool isActive;
 
   @override
   State<TicketHistoryScreen> createState() => _TicketHistoryScreenState();
@@ -23,7 +28,13 @@ class _TicketHistoryScreenState extends State<TicketHistoryScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchTickets();
+    if (widget.isActive) _fetchTickets();
+  }
+
+  @override
+  void didUpdateWidget(covariant TicketHistoryScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.isActive && widget.isActive) _fetchTickets();
   }
 
   Future<void> _fetchTickets() async {
@@ -37,10 +48,14 @@ class _TicketHistoryScreenState extends State<TicketHistoryScreen> {
       return;
     }
 
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _loadFailed = false;
+    });
     try {
       final response = await _apiClient.dio.get(ApiConstants.myTickets);
       if (response.statusCode == 200) {
+        if (!mounted) return;
         setState(() {
           _tickets = response.data['data']['tickets'] ?? [];
         });
@@ -55,7 +70,16 @@ class _TicketHistoryScreenState extends State<TicketHistoryScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Historial de Viajes')),
+      appBar: AppBar(
+        title: const Text('Historial de Viajes'),
+        actions: [
+          IconButton(
+            tooltip: 'Actualizar historial',
+            onPressed: _isLoading ? null : _fetchTickets,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
+      ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _loadFailed

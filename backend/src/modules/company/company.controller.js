@@ -281,7 +281,7 @@ const exportReportCSV = async (req, res, next) => {
       row.tipo_tarifa_aplicada,
       row.monto.toFixed(2),
       row.metodo_pago,
-      row.pago_simulado ? 'SIMULADO' : 'VERIFICADO',
+      'PAGADO',
     ].map(csvValue).join(','));
     const csv = [
       'Codigo_Boleta,Fecha_Hora,Placa,Cuenca,Tipo_Tarifa,Monto_Soles,Metodo_Pago,Estado',

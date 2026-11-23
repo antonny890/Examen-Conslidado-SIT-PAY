@@ -11,7 +11,7 @@ import '../../profile/screens/profile_screen.dart';
 /// Diseñada para que el chofer NUNCA tenga que interactuar con el teléfono mientras conduce:
 /// - Código QR grande y fijo listo para escanear en parabrisas/mampara.
 /// - Alerta visual de pantalla completa verde con sonido al confirmarse el pago.
-/// - SOLO muestra una confirmación o simulación del pago.
+/// - SOLO muestra la confirmación del pago.
 /// - NUNCA muestra montos, saldos ni datos personales (Ley 29733).
 class DriverHomeScreen extends StatefulWidget {
   const DriverHomeScreen({super.key});
@@ -494,9 +494,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                                                 const SizedBox(width: 8),
                                                 Expanded(
                                                   child: Text(
-                                                    item['simulado'] == 'true'
-                                                        ? '${item['nombre']} simuló el pago'
-                                                        : '${item['nombre']} realizó el pago',
+                                                    '${item['nombre']} pagó',
                                                     style: TextStyle(
                                                       color: primaryTextColor,
                                                       fontWeight:

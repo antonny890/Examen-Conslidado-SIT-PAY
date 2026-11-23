@@ -95,7 +95,6 @@ const getDriverRecentPayments = async (req, res, next) => {
             minute: '2-digit',
           })
           : '',
-        simulado: record.pago_simulado === true,
         codigoBoleta: record.codigo_boleta,
         fechaPago: paidAt?.toISOString() || null,
       };

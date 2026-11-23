@@ -15,7 +15,6 @@ interface DashboardTransaction {
   tipo_tarifa_aplicada: string;
   monto: number | string;
   fecha_pago: string;
-  pago_simulado: boolean;
 }
 
 interface CompanyDashboardData {
@@ -75,6 +74,10 @@ export const CompanyDashboardPage: React.FC = () => {
   const flota = data?.flota?.totalVehiculos;
   const choferes = data?.flota?.totalChoferes;
   const reclamos = data?.reclamosPendientes;
+  const pagosHoy = Number(data?.recaudacionHoy.pasajesCobrados || 0) +
+    Number(data?.recaudacionHoy.pagosSimulados || 0);
+  const montoHoy = Number(data?.recaudacionHoy.monto || 0) +
+    Number(data?.recaudacionHoy.montoSimulado || 0);
 
   return (
     <div className="space-y-6">
@@ -102,17 +105,17 @@ export const CompanyDashboardPage: React.FC = () => {
         {/* Recaudación Hoy */}
         <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-2xl space-y-2">
           <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Pagos simulados hoy</span>
+            <span>Pagos recibidos hoy</span>
             <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400">
               <DollarSign className="w-4 h-4" />
             </div>
           </div>
           <div className="text-xl font-black text-white">
-            {data ? `S/ ${Number(data.recaudacionHoy.montoSimulado).toFixed(2)}` : 'Sin datos'}
+            {data ? `S/ ${montoHoy.toFixed(2)}` : 'Sin datos'}
           </div>
           <div className="text-xs text-slate-400">
             {data
-              ? `${data.recaudacionHoy.pagosSimulados} pasajes; no son cargos reales`
+              ? `${pagosHoy} pasajes pagados hoy`
               : 'Sin información del servidor'}
           </div>
         </div>
@@ -198,7 +201,7 @@ export const CompanyDashboardPage: React.FC = () => {
                   </td>
                   <td className="py-2.5 px-3">
                     <span className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-300">
-                      {t.pago_simulado ? 'SIMULADO' : 'VERIFICADO'}
+                      PAGADO
                     </span>
                   </td>
                   <td className="py-2.5 px-3 text-slate-400 font-sans text-[11px]">
