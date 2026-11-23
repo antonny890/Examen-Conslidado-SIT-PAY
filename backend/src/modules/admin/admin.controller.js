@@ -10,6 +10,7 @@ const {
   writeAuditLog,
 } = require('../../services/postgresData');
 const { createUserAccount, deleteUserAccount, findUserByEmail } = require('../../services/userService');
+const { summarizeSuccessfulPayments } = require('../../utils/paymentDashboardSummary');
 
 const amount = (value) => Number(value || 0);
 const usersCollection = 'usuarios';
@@ -27,12 +28,8 @@ const getGlobalDashboard = async (req, res, next) => {
       listCollection('vehiculos'),
       listCollection('solicitudes_preferenciales'),
     ]);
-    const successful = transactions.filter((record) =>
-      record.estado === 'EXITOSA' && record.pago_simulado !== true);
-    const today = new Date().toISOString().slice(0, 10);
-    const todayTransactions = successful.filter((record) =>
-      timestampToDate(record.fecha_pago)?.toISOString().slice(0, 10) === today,
-    );
+    const paymentSummary = summarizeSuccessfulPayments(transactions);
+    const { successful } = paymentSummary;
     const grouped = new Map();
     successful.forEach((record) => {
       const type = record.tipo_tarifa_aplicada || 'SIN_TIPO';
@@ -44,14 +41,8 @@ const getGlobalDashboard = async (req, res, next) => {
     return res.json({
       success: true,
       data: {
-        recaudacionHoy: {
-          monto: todayTransactions.reduce((sum, record) => sum + amount(record.monto), 0),
-          pasajes: todayTransactions.length,
-        },
-        recaudacionHistorica: {
-          monto: successful.reduce((sum, record) => sum + amount(record.monto), 0),
-          pasajes: successful.length,
-        },
+        recaudacionHoy: paymentSummary.today,
+        recaudacionHistorica: paymentSummary.historical,
         distribucionFiscalizacion: [...grouped.values()],
         metricas: {
           totalUsuarios: users.length,

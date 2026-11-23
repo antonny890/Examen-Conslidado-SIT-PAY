@@ -156,6 +156,7 @@ class _PreferentialScreenState extends State<PreferentialScreen> {
     final esActivo = _statusData?['esMedioPasajeActivo'] ?? false;
     final vigencia = _statusData?['fechaVencimiento'];
     final institucion = _statusData?['institucion'];
+    final correoInstitucional = _statusData?['correoInstitucional'];
 
     return Scaffold(
       appBar: AppBar(title: const Text('Medio Pasaje (Ley 26271)')),
@@ -219,7 +220,7 @@ class _PreferentialScreenState extends State<PreferentialScreen> {
                   const SizedBox(height: 8),
                   Text(
                     esActivo
-                        ? 'Pagas S/ 0.50 en transporte urbano de Arequipa (05:00 a 24:00 hrs).'
+                        ? 'La tarifa universitaria se aplica en el horario permitido. Fuera de ese horario se aplica la tarifa normal.'
                         : estado == 'PENDIENTE'
                             ? 'Confirma el código de tu correo institucional para activar el beneficio automáticamente. Mientras tanto, se aplica la tarifa normal.'
                             : 'Verifica tu correo institucional para activar automáticamente la tarifa universitaria.',
@@ -231,6 +232,15 @@ class _PreferentialScreenState extends State<PreferentialScreen> {
                       'Vigente hasta: $vigencia • $institucion',
                       style: const TextStyle(
                           fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                  if (correoInstitucional is String &&
+                      correoInstitucional.isNotEmpty &&
+                      esActivo) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Correo institucional verificado: $correoInstitucional',
+                      style: const TextStyle(fontSize: 12),
                     ),
                   ],
                 ],

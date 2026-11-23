@@ -6,6 +6,7 @@ import '../../../core/network/api_client.dart';
 import '../../auth/models/user_model.dart';
 import '../../auth/providers/auth_provider.dart';
 import 'payment_screen.dart';
+import 'preferential_screen.dart';
 import 'ticket_history_screen.dart';
 import '../../profile/screens/profile_screen.dart';
 
@@ -276,6 +277,23 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
           const SizedBox(height: 16),
 
           _buildFareCards(isDark),
+          const SizedBox(height: 18),
+          OutlinedButton.icon(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const PreferentialScreen(),
+                ),
+              );
+            },
+            icon: const Icon(Icons.school_outlined),
+            label: const Text('Acreditar correo institucional'),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Conserva tu correo actual. Al verificar el institucional, se aplicará la tarifa universitaria cuando corresponda y la normal en los demás horarios.',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
           const SizedBox(height: 18),
 
           if (auth.isDemoMode) ...[

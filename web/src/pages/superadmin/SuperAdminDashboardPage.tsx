@@ -67,7 +67,7 @@ export const SuperAdminDashboardPage: React.FC = () => {
       {/* KPI Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-2xl space-y-1">
-          <div className="text-xs text-slate-400">Recaudación verificada de hoy</div>
+          <div className="text-xs text-slate-400">Pagos registrados hoy</div>
           <div className="text-xl font-black text-amber-300">
             {data ? `S/ ${Number(data.recaudacionHoy.monto).toFixed(2)}` : 'Sin datos'}
           </div>
@@ -102,7 +102,7 @@ export const SuperAdminDashboardPage: React.FC = () => {
       </div>
 
       <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 text-xs text-slate-400">
-        Recaudación histórica: S/ {Number(data?.recaudacionHistorica.monto || 0).toFixed(2)} en {data?.recaudacionHistorica.pasajes ?? 0} pagos verificados.
+        Importe histórico registrado: S/ {Number(data?.recaudacionHistorica.monto || 0).toFixed(2)} en {data?.recaudacionHistorica.pasajes ?? 0} pagos.
       </div>
     </div>
   );

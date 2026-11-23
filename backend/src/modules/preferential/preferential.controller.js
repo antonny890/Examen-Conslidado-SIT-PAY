@@ -7,6 +7,7 @@ const {
   writeNotification,
 } = require('../../services/postgresData');
 const { sendInstitutionalVerificationCode } = require('../../services/emailService');
+const { dateKeyInPeru } = require('../../utils/dateKeyInPeru');
 
 const ALLOWED_DOMAINS = (process.env.ALLOWED_EDU_DOMAINS || 'continental.edu.pe,unsa.edu.pe,ucsm.edu.pe,utp.edu.pe')
   .split(',')
@@ -148,7 +149,7 @@ const getPassengerStatus = async (req, res, next) => {
         data: { estado: 'SIN_SOLICITUD', esMedioPasajeActivo: false, tipoPasajero: 'NORMAL', tarifaBase: 1.00 },
       });
     }
-    const today = new Date().toISOString().slice(0, 10);
+    const today = dateKeyInPeru(new Date());
     const expired = request.fecha_vencimiento && request.fecha_vencimiento < today;
     return res.json({
       success: true,
@@ -157,6 +158,7 @@ const getPassengerStatus = async (req, res, next) => {
         estado: expired ? 'VENCIDA' : request.estado,
         tipoPreferencial: request.tipo_preferencial,
         institucion: request.institucion_educativa,
+        correoInstitucional: request.correo_institucional,
         metodo: request.metodo_verificacion,
         fotoCarneUrl: request.foto_carne_url,
         fechaVencimiento: request.fecha_vencimiento,

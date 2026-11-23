@@ -1,14 +1,6 @@
 const { listCollection, queryCollection, timestampToDate } = require('./postgresData');
-
-const DAYS = {
-  0: 'DOMINGO',
-  1: 'LUNES',
-  2: 'MARTES',
-  3: 'MIERCOLES',
-  4: 'JUEVES',
-  5: 'VIERNES',
-  6: 'SABADO',
-};
+const { dateKeyInPeru } = require('../utils/dateKeyInPeru');
+const { dateTimePartsInPeru } = require('../utils/dateTimeInPeru');
 
 const newestFirst = (left, right) => {
   const leftDate = timestampToDate(left.created_at)?.getTime() || 0;
@@ -27,7 +19,7 @@ const isFareCurrent = (fare, today) => {
 const calculateApplicableFare = async (passengerId, customDate = new Date()) => {
   const now = customDate instanceof Date ? customDate : new Date(customDate);
   if (Number.isNaN(now.getTime())) throw new Error('La fecha de cálculo de tarifa no es válida.');
-  const today = now.toISOString().slice(0, 10);
+  const today = dateKeyInPeru(now);
   const activeFares = (await queryCollection('tarifas', 'activo', '==', true))
     .filter((fare) => isFareCurrent(fare, today))
     .sort(newestFirst);
@@ -72,8 +64,9 @@ const calculateApplicableFare = async (passengerId, customDate = new Date()) => 
       throw new Error('La configuración de días de la tarifa universitaria no es válida.', { cause: error });
     }
   }
-  const day = DAYS[now.getDay()];
-  const time = now.toTimeString().split(' ')[0];
+  const peruDateTime = dateTimePartsInPeru(now);
+  const day = peruDateTime.day;
+  const time = peruDateTime.time;
   const validDay = Array.isArray(applicableDays) && applicableDays.includes(day);
   const validTime = time >= universityFare.hora_inicio && time <= universityFare.hora_fin;
   if (validDay && validTime) {
