@@ -57,6 +57,7 @@ class _FaceVerificationScreenState extends State<FaceVerificationScreen>
   double? _initialHeadAngle;
   DateTime _lastFrameProcessed = DateTime.fromMillisecondsSinceEpoch(0);
   String? _cameraError;
+  String? _cameraDiagnostic;
   String _guidance = 'Autoriza la cámara y centra tu rostro en la guía.';
 
   @override
@@ -84,6 +85,7 @@ class _FaceVerificationScreenState extends State<FaceVerificationScreen>
     setState(() {
       _isInitializing = true;
       _cameraError = null;
+      _cameraDiagnostic = null;
       _frameAnalysisFailed = false;
     });
 
@@ -315,7 +317,10 @@ class _FaceVerificationScreenState extends State<FaceVerificationScreen>
       final faces = await _faceDetector.processImage(inputImage);
       if (!mounted) return;
       if (_cameraError != null) {
-        setState(() => _cameraError = null);
+        setState(() {
+          _cameraError = null;
+          _cameraDiagnostic = null;
+        });
       }
       if (faces.length != 1) {
         _resetLiveness();
@@ -381,6 +386,7 @@ class _FaceVerificationScreenState extends State<FaceVerificationScreen>
         setState(() {
           _cameraError =
               'No se pudo analizar el video en vivo. Al tomar la selfie se comprobará que aparezca un rostro.';
+          _cameraDiagnostic = error.toString();
           _frameAnalysisFailed = true;
           _hasOneCenteredFace = true;
           _livenessComplete = true;
@@ -414,12 +420,15 @@ class _FaceVerificationScreenState extends State<FaceVerificationScreen>
         await File(selfie.path).delete();
         if (!mounted) return;
         setState(() {
+          _cameraError = null;
           _guidance = faces.isEmpty
               ? 'No se detectó un rostro en la foto. Inténtalo otra vez.'
               : 'La foto debe mostrar solo un rostro. Inténtalo otra vez.';
           _isCapturing = false;
         });
-        await controller.startImageStream(_processCameraFrame);
+        if (!_frameAnalysisFailed) {
+          await controller.startImageStream(_processCameraFrame);
+        }
         return;
       }
       if (!mounted) {
@@ -428,6 +437,8 @@ class _FaceVerificationScreenState extends State<FaceVerificationScreen>
       }
       setState(() {
         _selfie = selfie;
+        _cameraError = null;
+        _cameraDiagnostic = null;
         _guidance =
             'La selfie se revisó en este dispositivo. No confirma tu identidad.';
         _isCapturing = false;
@@ -436,10 +447,12 @@ class _FaceVerificationScreenState extends State<FaceVerificationScreen>
       if (!mounted) return;
       setState(() {
         _cameraError = error.description ?? 'No se pudo tomar la selfie.';
+        _cameraDiagnostic = error.toString();
         _isCapturing = false;
       });
       if (controller.value.isInitialized &&
-          !controller.value.isStreamingImages) {
+          !controller.value.isStreamingImages &&
+          !_frameAnalysisFailed) {
         await controller.startImageStream(_processCameraFrame);
       }
     } catch (error, stackTrace) {
@@ -448,10 +461,12 @@ class _FaceVerificationScreenState extends State<FaceVerificationScreen>
       setState(() {
         _cameraError =
             'No se pudo revisar la selfie. Inténtalo nuevamente.';
+        _cameraDiagnostic = error.toString();
         _isCapturing = false;
       });
       if (controller.value.isInitialized &&
-          !controller.value.isStreamingImages) {
+          !controller.value.isStreamingImages &&
+          !_frameAnalysisFailed) {
         await controller.startImageStream(_processCameraFrame);
       }
     }
@@ -467,6 +482,7 @@ class _FaceVerificationScreenState extends State<FaceVerificationScreen>
       _frameAnalysisFailed = false;
       _guidance = 'Centra tu rostro y parpadea o gira suavemente la cabeza.';
       _cameraError = null;
+      _cameraDiagnostic = null;
     });
     final controller = _cameraController;
     if (controller != null && controller.value.isInitialized) {
@@ -632,6 +648,17 @@ class _FaceVerificationScreenState extends State<FaceVerificationScreen>
                 ],
               ),
             ),
+            if (_cameraDiagnostic != null)
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                title: const Text('Detalles técnicos'),
+                children: [
+                  SelectableText(
+                    _cameraDiagnostic!,
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
+              ),
             if (selfie == null) ...[
               const SizedBox(height: 12),
               CheckboxListTile(
