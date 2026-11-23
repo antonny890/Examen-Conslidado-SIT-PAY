@@ -115,8 +115,6 @@ const beginPayment = async (req, res, next) => {
       unidad_codigo_snapshot: vehicle.cuenca_codigo,
       unidad_nombre_snapshot: vehicle.cuenca_nombre,
       tarifa_motivo_snapshot: fare.motivo,
-      saldo_anterior: 0,
-      saldo_posterior: 0,
       metodo_pago: 'TARJETA_SIMULADA',
       origen_pago: plate ? 'PLACA_MANUAL' : 'QR',
       metodo_pago_id: method.id,
