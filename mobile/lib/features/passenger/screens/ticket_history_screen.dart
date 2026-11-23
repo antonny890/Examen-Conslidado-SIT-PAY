@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/network/api_client.dart';
+import '../../../core/utils/amount_parser.dart';
 import '../../auth/providers/auth_provider.dart';
 import 'ticket_detail_screen.dart';
 
@@ -113,8 +114,7 @@ class _TicketHistoryScreenState extends State<TicketHistoryScreen> {
                               const SizedBox(height: 10),
                           itemBuilder: (context, index) {
                             final t = _tickets[index];
-                            final monto =
-                                (t['monto'] as num?)?.toDouble() ?? 1.0;
+                            final monto = parseAmount(t['monto']);
                             final placa = t['placa'] ?? 'Bus SIT';
                             final codigo = t['codigo_boleta'] ?? 'BOL-...';
                             final empresa =
@@ -154,7 +154,9 @@ class _TicketHistoryScreenState extends State<TicketHistoryScreen> {
                                 ),
                                 subtitle: Text(details),
                                 trailing: Text(
-                                  'S/ ${monto.toStringAsFixed(2)}',
+                                  monto == null
+                                      ? 'Importe no disponible'
+                                      : 'S/ ${monto.toStringAsFixed(2)}',
                                   style: const TextStyle(
                                     fontWeight: FontWeight.w900,
                                     fontSize: 16,

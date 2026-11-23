@@ -18,6 +18,7 @@ const expandTicket = async (transaction) => {
     : null;
   return {
     ...transaction,
+    monto: Number(transaction.monto),
     placa: transaction.placa_snapshot || vehicle?.placa || '',
     empresa_nombre: transaction.empresa_nombre_snapshot || company?.nombre_comercial || '',
     cuenca_codigo: transaction.unidad_codigo_snapshot || unit?.codigo || '',

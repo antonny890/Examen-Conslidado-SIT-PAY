@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/utils/amount_parser.dart';
 
 /// Pantalla de Detalle de Boleta Digital de Pasaje (Ley 29571)
 class TicketDetailScreen extends StatelessWidget {
@@ -25,7 +26,7 @@ class TicketDetailScreen extends StatelessWidget {
     ].whereType<String>().where((value) => value.isNotEmpty).join(' ');
     final cuenca =
         ticket['cuenca'] ?? (unitSnapshot.isEmpty ? 'C3 Cayma' : unitSnapshot);
-    final monto = (ticket['monto'] as num?)?.toDouble() ?? 1.0;
+    final monto = parseAmount(ticket['monto']);
     final tipoTarifa =
         ticket['tipoTarifa'] ?? ticket['tipo_tarifa_aplicada'] ?? 'NORMAL';
 
@@ -152,7 +153,9 @@ class TicketDetailScreen extends StatelessWidget {
                               fontWeight: FontWeight.bold, fontSize: 15),
                         ),
                         Text(
-                          'S/ ${monto.toStringAsFixed(2)}',
+                          monto == null
+                              ? 'Importe no disponible'
+                              : 'S/ ${monto.toStringAsFixed(2)}',
                           style: const TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.w900,
