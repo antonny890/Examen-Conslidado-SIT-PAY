@@ -87,7 +87,37 @@ class DriverSocketProvider extends ChangeNotifier {
 
     final token = await SecureStorageService.getAccessToken();
 
+    await _loadRecentPayments();
     _connectSocket(token);
+  }
+
+  Future<void> _loadRecentPayments() async {
+    try {
+      final response = await ApiClient().dio.get(
+            ApiConstants.driverRecentPayments,
+          );
+      final responseData = response.data;
+      final payments = responseData is Map && responseData['data'] is List
+          ? responseData['data'] as List
+          : const [];
+      _turnHistory
+        ..clear()
+        ..addAll(payments.whereType<Map>().map((payment) {
+          final alias = payment['pasajeroAlias'];
+          return {
+            'nombre': alias is String && alias.trim().isNotEmpty
+                ? alias.trim()
+                : 'Pasajero',
+            'alias': alias is String ? alias.trim() : '',
+            'hora': payment['hora'] is String ? payment['hora'] as String : '',
+            'simulado': payment['simulado'] == true ? 'true' : 'false',
+          };
+        }));
+      _turnPaymentCount = _turnHistory.length;
+      notifyListeners();
+    } catch (error) {
+      debugPrint('[Driver Payments] No se pudo cargar el historial: $error');
+    }
   }
 
   void _connectSocket(String? token) {

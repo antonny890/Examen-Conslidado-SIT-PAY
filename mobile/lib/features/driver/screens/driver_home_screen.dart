@@ -276,7 +276,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'Pagos confirmados en este turno',
+                            'Últimos pagos registrados',
                             style: TextStyle(
                               color: primaryTextColor,
                               fontSize: 12,

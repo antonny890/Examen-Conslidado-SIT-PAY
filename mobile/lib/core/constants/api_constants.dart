@@ -36,6 +36,7 @@ class ApiConstants {
   // Pagos y Boletas
   static const String payQR = '/payments/pay/qr';
   static const String payPlate = '/payments/pay/plate';
+  static const String driverRecentPayments = '/payments/driver/recent';
   static const String previewPayment = '/payments/preview';
   static const String paymentMethods = '/payment-methods';
   static const String myTickets = '/tickets';

@@ -2,6 +2,7 @@ const crypto = require('node:crypto');
 const {
   getDocument,
   queryCollection,
+  timestampToDate,
 } = require('../../services/postgresData');
 const { db } = require('../../services/postgresData');
 const { calculateApplicableFare } = require('../../services/fareEngine');
@@ -62,6 +63,38 @@ const previewPayment = async (req, res, next) => {
         paymentMode: 'SIMULATED',
       },
     });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const getDriverRecentPayments = async (req, res, next) => {
+  try {
+    const transactions = (await queryCollection(
+      'transacciones',
+      'chofer_usuario_id',
+      '==',
+      req.user.id,
+    ))
+      .filter((record) => record.estado === 'EXITOSA')
+      .sort((left, right) =>
+        (timestampToDate(right.fecha_pago)?.getTime() || 0) -
+        (timestampToDate(left.fecha_pago)?.getTime() || 0));
+    const recent = await Promise.all(transactions.slice(0, 8).map(async (record) => {
+      const profile = await getDocument('perfiles', record.pasajero_id);
+      const paidAt = timestampToDate(record.fecha_pago);
+      return {
+        pasajeroAlias: profile?.alias || null,
+        hora: paidAt
+          ? paidAt.toLocaleTimeString('es-PE', {
+            hour: '2-digit',
+            minute: '2-digit',
+          })
+          : '',
+        simulado: record.pago_simulado === true,
+      };
+    }));
+    return res.json({ success: true, data: recent });
   } catch (error) {
     return next(error);
   }
@@ -158,6 +191,7 @@ const beginPayment = async (req, res, next) => {
 
 module.exports = {
   previewPayment,
+  getDriverRecentPayments,
   payWithQR: beginPayment,
   payWithPlate: beginPayment,
 };

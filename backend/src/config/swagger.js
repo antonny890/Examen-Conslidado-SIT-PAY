@@ -388,6 +388,18 @@ SIT-Pay no almacena dinero ni mantiene saldos. Los pagos de esta versión son si
         },
       },
     },
+    '/payments/driver/recent': {
+      get: {
+        tags: ['Pagos de Pasaje'],
+        summary: 'Listar los últimos pagos asociados al chofer autenticado',
+        description: 'Devuelve hasta ocho pagos exitosos de la unidad asignada, incluidos los simulados, para recuperar el historial al iniciar sesión.',
+        security: [{ BearerAuth: [] }],
+        responses: {
+          200: { description: 'Pagos recientes con alias opcional, hora y estado simulado' },
+          403: { description: 'La cuenta no tiene el rol de chofer' },
+        },
+      },
+    },
     '/payments/pay/qr': {
       post: {
         tags: ['Pagos de Pasaje'],

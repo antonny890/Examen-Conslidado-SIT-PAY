@@ -15,6 +15,7 @@ interface DashboardTransaction {
   tipo_tarifa_aplicada: string;
   monto: number | string;
   fecha_pago: string;
+  pago_simulado: boolean;
 }
 
 interface CompanyDashboardData {
@@ -25,6 +26,8 @@ interface CompanyDashboardData {
   recaudacionHoy: {
     monto: number;
     pasajesCobrados: number;
+    montoSimulado: number;
+    pagosSimulados: number;
   };
   recaudacionHistorica: {
     monto: number;
@@ -99,16 +102,18 @@ export const CompanyDashboardPage: React.FC = () => {
         {/* Recaudación Hoy */}
         <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-2xl space-y-2">
           <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Pagos recibidos hoy</span>
+            <span>Pagos simulados hoy</span>
             <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400">
               <DollarSign className="w-4 h-4" />
             </div>
           </div>
           <div className="text-xl font-black text-white">
-            {data ? `S/ ${Number(data.recaudacionHoy.monto).toFixed(2)}` : 'Sin datos'}
+            {data ? `S/ ${Number(data.recaudacionHoy.montoSimulado).toFixed(2)}` : 'Sin datos'}
           </div>
           <div className="text-xs text-slate-400">
-            {data ? `${data.recaudacionHoy.pasajesCobrados} pasajes cobrados hoy` : 'Sin información del servidor'}
+            {data
+              ? `${data.recaudacionHoy.pagosSimulados} pasajes; no son cargos reales`
+              : 'Sin información del servidor'}
           </div>
         </div>
 
@@ -160,7 +165,7 @@ export const CompanyDashboardPage: React.FC = () => {
       {/* Ultimas Transacciones Registradas */}
       <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-bold text-white">Pagos confirmados</h3>
+          <h3 className="text-sm font-bold text-white">Últimos pagos registrados</h3>
           <span className="text-xs text-slate-400 font-mono">
             {data?.ultimasTransacciones.length ?? 0} registros
           </span>
@@ -174,6 +179,7 @@ export const CompanyDashboardPage: React.FC = () => {
                 <th className="py-2.5 px-3">Placa</th>
                 <th className="py-2.5 px-3">Tipo de Tarifa</th>
                 <th className="py-2.5 px-3">Monto</th>
+                <th className="py-2.5 px-3">Estado</th>
                 <th className="py-2.5 px-3">Fecha y Hora</th>
               </tr>
             </thead>
@@ -190,6 +196,11 @@ export const CompanyDashboardPage: React.FC = () => {
                   <td className="py-2.5 px-3 font-bold text-emerald-400">
                     S/ {Number(t.monto).toFixed(2)}
                   </td>
+                  <td className="py-2.5 px-3">
+                    <span className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-300">
+                      {t.pago_simulado ? 'SIMULADO' : 'VERIFICADO'}
+                    </span>
+                  </td>
                   <td className="py-2.5 px-3 text-slate-400 font-sans text-[11px]">
                     {new Date(t.fecha_pago).toLocaleString('es-PE')}
                   </td>
@@ -197,8 +208,8 @@ export const CompanyDashboardPage: React.FC = () => {
               ))}
               {!loading && data?.ultimasTransacciones.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="py-6 px-3 text-center text-slate-400">
-                    No hay pagos verificados para mostrar.
+                  <td colSpan={6} className="py-6 px-3 text-center text-slate-400">
+                    No hay pagos registrados para mostrar.
                   </td>
                 </tr>
               )}

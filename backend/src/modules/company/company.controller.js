@@ -17,8 +17,10 @@ const companyForAdmin = async (userId) => {
 };
 
 const toAmount = (value) => Number(value || 0);
-const paidTransactions = (records) =>
-  records.filter((record) => record.estado === 'EXITOSA' && record.pago_simulado !== true);
+const successfulTransactions = (records) =>
+  records.filter((record) => record.estado === 'EXITOSA');
+const verifiedTransactions = (records) =>
+  successfulTransactions(records).filter((record) => record.pago_simulado !== true);
 const newestFirst = (left, right) =>
   (timestampToDate(right.fecha_pago)?.getTime() || 0) -
   (timestampToDate(left.fecha_pago)?.getTime() || 0);
@@ -43,9 +45,14 @@ const getCompanyDashboard = async (req, res, next) => {
       queryCollection('choferes', 'empresa_id', '==', companyId),
       queryCollection('incidencias_reclamos', 'empresa_id', '==', companyId),
     ]);
-    const successful = paidTransactions(transactions);
+    const successful = successfulTransactions(transactions);
+    const verified = verifiedTransactions(successful);
     const today = new Date().toISOString().slice(0, 10);
-    const todayPayments = successful.filter((transaction) =>
+    const todayPayments = verified.filter((transaction) =>
+      timestampToDate(transaction.fecha_pago)?.toISOString().slice(0, 10) === today,
+    );
+    const todaySimulatedPayments = successful.filter((transaction) =>
+      transaction.pago_simulado === true &&
       timestampToDate(transaction.fecha_pago)?.toISOString().slice(0, 10) === today,
     );
     const recent = await Promise.all(successful.sort(newestFirst).slice(0, 10).map(async (transaction) => {
@@ -57,6 +64,7 @@ const getCompanyDashboard = async (req, res, next) => {
         tipo_tarifa_aplicada: transaction.tipo_tarifa_aplicada,
         fecha_pago: transaction.fecha_pago,
         placa: vehicle?.placa || '',
+        pago_simulado: transaction.pago_simulado === true,
       };
     }));
     return res.json({
@@ -66,10 +74,12 @@ const getCompanyDashboard = async (req, res, next) => {
         recaudacionHoy: {
           monto: todayPayments.reduce((sum, item) => sum + toAmount(item.monto), 0),
           pasajesCobrados: todayPayments.length,
+          montoSimulado: todaySimulatedPayments.reduce((sum, item) => sum + toAmount(item.monto), 0),
+          pagosSimulados: todaySimulatedPayments.length,
         },
         recaudacionHistorica: {
-          monto: successful.reduce((sum, item) => sum + toAmount(item.monto), 0),
-          pasajesCobrados: successful.length,
+          monto: verified.reduce((sum, item) => sum + toAmount(item.monto), 0),
+          pasajesCobrados: verified.length,
         },
         flota: {
           totalVehiculos: vehicles.filter((vehicle) => vehicle.activo === true).length,
@@ -222,7 +232,7 @@ const getReportTransactions = async (req, limit = 1000) => {
     targetCompanyId = company.id;
   }
   let transactions = (await listCollection('transacciones'))
-    .filter((record) => record.estado === 'EXITOSA' && record.pago_simulado !== true);
+    .filter((record) => record.estado === 'EXITOSA');
   if (targetCompanyId) transactions = transactions.filter((record) => record.empresa_id === targetCompanyId);
   if (fechaInicio) transactions = transactions.filter((record) =>
     timestampToDate(record.fecha_pago)?.toISOString().slice(0, 10) >= fechaInicio,
@@ -232,19 +242,20 @@ const getReportTransactions = async (req, limit = 1000) => {
   );
   transactions.sort(newestFirst);
   return Promise.all(transactions.slice(0, limit).map(async (transaction) => {
-    const [vehicle, unit] = await Promise.all([
-      getDocument('vehiculos', transaction.vehiculo_id),
-      getDocument('unidades_negocio', transaction.unidad_negocio_id),
-    ]);
+    const vehicle = await getDocument('vehiculos', transaction.vehiculo_id);
+    const unit = vehicle?.unidad_negocio_id
+      ? await getDocument('unidades_negocio', vehicle.unidad_negocio_id)
+      : null;
     const date = timestampToDate(transaction.fecha_pago);
     return {
       codigo_boleta: transaction.codigo_boleta || '',
       fecha_pago: date?.toISOString() || null,
       placa: vehicle?.placa || '',
-      cuenca: unit?.codigo || '',
+      cuenca: transaction.unidad_codigo_snapshot || unit?.codigo || '',
       tipo_tarifa_aplicada: transaction.tipo_tarifa_aplicada || '',
       monto: Number(transaction.monto || 0),
       metodo_pago: transaction.metodo_pago || '',
+      pago_simulado: transaction.pago_simulado === true,
     };
   }));
 };
@@ -269,9 +280,10 @@ const exportReportCSV = async (req, res, next) => {
       row.tipo_tarifa_aplicada,
       row.monto.toFixed(2),
       row.metodo_pago,
+      row.pago_simulado ? 'SIMULADO' : 'VERIFICADO',
     ].map(csvValue).join(','));
     const csv = [
-      'Codigo_Boleta,Fecha_Hora,Placa,Cuenca,Tipo_Tarifa,Monto_Soles,Metodo_Pago',
+      'Codigo_Boleta,Fecha_Hora,Placa,Cuenca,Tipo_Tarifa,Monto_Soles,Metodo_Pago,Estado',
       ...csvRows,
     ].join('\n');
     res.setHeader('Content-Type', 'text/csv');

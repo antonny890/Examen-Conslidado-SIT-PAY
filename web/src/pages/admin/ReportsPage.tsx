@@ -10,6 +10,7 @@ interface ReportRow {
   tipo_tarifa_aplicada: string;
   monto: number;
   metodo_pago: string;
+  pago_simulado: boolean;
 }
 
 const formatDateInput = (date: Date) => {
@@ -101,7 +102,7 @@ export const ReportsPage: React.FC = () => {
         <div>
           <h1 className="text-xl font-bold text-white tracking-tight">Reportes de Recaudación y Liquidación</h1>
           <p className="text-xs text-slate-400">
-            Consulta transacciones verificadas del servidor por rango de fechas y expórtalas a CSV.
+            Consulta pagos registrados por rango de fechas y expórtalos a CSV. Los pagos de este prototipo son simulados.
           </p>
         </div>
         <button
@@ -161,6 +162,7 @@ export const ReportsPage: React.FC = () => {
                 <th className="py-3 px-4">Cuenca SIT</th>
                 <th className="py-3 px-4">Tipo de Tarifa</th>
                 <th className="py-3 px-4">Método</th>
+                <th className="py-3 px-4">Estado</th>
                 <th className="py-3 px-4 text-right">Importe</th>
               </tr>
             </thead>
@@ -179,6 +181,11 @@ export const ReportsPage: React.FC = () => {
                     </span>
                   </td>
                   <td className="py-3 px-4 text-slate-300 font-sans">{row.metodo_pago}</td>
+                  <td className="py-3 px-4">
+                    <span className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-300">
+                      {row.pago_simulado ? 'SIMULADO' : 'VERIFICADO'}
+                    </span>
+                  </td>
                   <td className="py-3 px-4 text-right font-black text-emerald-400">
                     S/ {Number(row.monto).toFixed(2)}
                   </td>
@@ -186,8 +193,8 @@ export const ReportsPage: React.FC = () => {
               ))}
               {!loading && rows.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="py-8 px-4 text-center text-slate-400">
-                    No hay transacciones verificadas para el rango seleccionado.
+                  <td colSpan={8} className="py-8 px-4 text-center text-slate-400">
+                    No hay pagos registrados para el rango seleccionado.
                   </td>
                 </tr>
               )}
