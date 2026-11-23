@@ -94,13 +94,14 @@ const reserveDni = async (dni) => {
   const reservationId = crypto.randomUUID();
   await db.runTransaction(async (transaction) => {
     await transaction.set(reference, {
+      numero_documento: dni,
       usuario_id: null,
       reservation_id: reservationId,
       reservation_expires_at: new Date(Date.now() + 5 * 60 * 1000),
       updated_at: new Date(),
     }, { merge: true });
   });
-  return { reference, reservationId };
+  return { reference, reservationId, dni };
 };
 
 const releaseDniReservation = async ({ reference, reservationId }) => {
@@ -116,9 +117,10 @@ const releaseDniReservation = async ({ reference, reservationId }) => {
   });
 };
 
-const linkDniToUser = async ({ reference, uid }) => {
+const linkDniToUser = async ({ reference, uid, dni }) => {
   await db.runTransaction(async (transaction) => {
     await transaction.set(reference, {
+      numero_documento: dni,
       usuario_id: uid,
       reservation_id: null,
       reservation_expires_at: null,
