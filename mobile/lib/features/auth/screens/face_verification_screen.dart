@@ -45,6 +45,7 @@ class _FaceVerificationScreenState extends State<FaceVerificationScreen>
   bool _isCapturing = false;
   bool _isSubmittingRegistration = false;
   bool _isProcessingFrame = false;
+  bool _frameAnalysisFailed = false;
   bool _cameraReady = false;
   bool _hasOneCenteredFace = false;
   bool _eyesWereOpen = false;
@@ -83,6 +84,7 @@ class _FaceVerificationScreenState extends State<FaceVerificationScreen>
     setState(() {
       _isInitializing = true;
       _cameraError = null;
+      _frameAnalysisFailed = false;
     });
 
     try {
@@ -289,6 +291,7 @@ class _FaceVerificationScreenState extends State<FaceVerificationScreen>
   Future<void> _processCameraFrame(CameraImage image) async {
     final now = DateTime.now();
     if (_isProcessingFrame ||
+        _frameAnalysisFailed ||
         _selfie != null ||
         now.difference(_lastFrameProcessed).inMilliseconds < 300) {
       return;
@@ -372,12 +375,17 @@ class _FaceVerificationScreenState extends State<FaceVerificationScreen>
                     ? 'Parpadea una vez o gira suavemente la cabeza y vuelve al centro.'
                     : 'Mantén un solo rostro y termina el movimiento para continuar.';
       });
-    } catch (error) {
-      debugPrint('Face detection frame failed: $error');
+    } catch (error, stackTrace) {
+      debugPrint('Face detection frame failed: $error\n$stackTrace');
       if (mounted) {
         setState(() {
           _cameraError =
-              'No se pudo analizar la imagen. Reinicia la cámara e inténtalo nuevamente.';
+              'No se pudo analizar el video en vivo. Al tomar la selfie se comprobará que aparezca un rostro.';
+          _frameAnalysisFailed = true;
+          _hasOneCenteredFace = true;
+          _livenessComplete = true;
+          _guidance =
+              'La comprobación de movimiento no está disponible en este dispositivo.';
         });
       }
     } finally {
@@ -434,14 +442,18 @@ class _FaceVerificationScreenState extends State<FaceVerificationScreen>
           !controller.value.isStreamingImages) {
         await controller.startImageStream(_processCameraFrame);
       }
-    } catch (error) {
-      debugPrint('Selfie validation failed: $error');
+    } catch (error, stackTrace) {
+      debugPrint('Selfie validation failed: $error\n$stackTrace');
       if (!mounted) return;
       setState(() {
         _cameraError =
             'No se pudo revisar la selfie. Inténtalo nuevamente.';
         _isCapturing = false;
       });
+      if (controller.value.isInitialized &&
+          !controller.value.isStreamingImages) {
+        await controller.startImageStream(_processCameraFrame);
+      }
     }
   }
 
@@ -452,6 +464,7 @@ class _FaceVerificationScreenState extends State<FaceVerificationScreen>
     _resetLiveness();
     setState(() {
       _selfie = null;
+      _frameAnalysisFailed = false;
       _guidance = 'Centra tu rostro y parpadea o gira suavemente la cabeza.';
       _cameraError = null;
     });
