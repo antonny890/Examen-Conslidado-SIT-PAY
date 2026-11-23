@@ -20,12 +20,29 @@ const {
   lookupDniName,
   parseDniName,
 } = require('../../services/dniService');
+const {
+  clearWebSessionCookies,
+  getRefreshTokenCookie,
+  setWebSessionCookies,
+} = require('../../utils/webSessionCookies');
 const googleOAuthClient = new OAuth2Client();
 const COLLECTION = 'usuarios';
 const PROFILES = 'perfiles';
 
 const normalizeEmail = (email) =>
   typeof email === 'string' ? email.trim().toLowerCase() : '';
+
+const sendSessionResponse = (req, res, message, user, tokens) => {
+  if (req.webSession) {
+    setWebSessionCookies(res, tokens);
+    return res.json({ success: true, message, data: { usuario: user } });
+  }
+  return res.json({
+    success: true,
+    message,
+    data: { usuario: user, tokens },
+  });
+};
 
 const getUserByEmail = findUserByEmail;
 
@@ -425,16 +442,24 @@ const login = async (req, res, next) => {
     if (user.email_verificado !== true || tokenResult.emailVerified !== true) {
       return res.status(403).json({ success: false, message: 'Confirma tu correo electrónico para activar la cuenta.' });
     }
+    if (
+      req.webSession &&
+      !['ADMIN_EMPRESA', 'SUPER_ADMIN'].includes(user.rol_codigo)
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: 'Solo las cuentas administrativas pueden acceder al panel web.',
+      });
+    }
 
     await db.collection(COLLECTION).doc(user.id).update({ ultimo_login_at: new Date() });
-    return res.json({
-      success: true,
-      message: 'Inicio de sesión exitoso.',
-      data: {
-        usuario: await getSessionUser(user),
-        tokens: { accessToken: tokenResult.idToken, refreshToken: tokenResult.refreshToken },
-      },
-    });
+    return sendSessionResponse(
+      req,
+      res,
+      'Inicio de sesión exitoso.',
+      await getSessionUser(user),
+      { accessToken: tokenResult.idToken, refreshToken: tokenResult.refreshToken },
+    );
   } catch (error) {
     next(error);
   }
@@ -487,18 +512,17 @@ const loginWithGoogle = async (req, res, next) => {
       ultimo_login_at: new Date(),
       updated_at: new Date(),
     }, { merge: true });
-    return res.json({
-      success: true,
-      message: 'Inicio de sesión con Google exitoso.',
-      data: {
-        usuario: await getSessionUser({
-          ...user,
-          google_connected: true,
-          email_verificado: true,
-        }, googleAccount.picture),
-        tokens: await issueSession(user.id),
-      },
-    });
+    return sendSessionResponse(
+      req,
+      res,
+      'Inicio de sesión con Google exitoso.',
+      await getSessionUser({
+        ...user,
+        google_connected: true,
+        email_verificado: true,
+      }, googleAccount.picture),
+      await issueSession(user.id),
+    );
   } catch (error) {
     next(error);
   }
@@ -662,12 +686,22 @@ const googlePassengerAuth = async (req, res, next) => {
 };
 
 const refreshToken = async (req, res, next) => {
-  const refreshTokenValue = req.body?.refreshToken;
+  const refreshTokenValue = req.webSession
+    ? getRefreshTokenCookie(req)
+    : req.body?.refreshToken;
   if (typeof refreshTokenValue !== 'string' || !refreshTokenValue) {
+    if (req.webSession) {
+      clearWebSessionCookies(res);
+      return res.status(401).json({ success: false, message: 'Sesión web expirada.' });
+    }
     return res.status(400).json({ success: false, message: 'Refresh token requerido.' });
   }
   try {
     const tokens = await supabaseAuth.refreshSession(refreshTokenValue);
+    if (req.webSession) {
+      setWebSessionCookies(res, tokens);
+      return res.json({ success: true, message: 'Token renovado con éxito.' });
+    }
     return res.json({
       success: true,
       message: 'Token renovado con éxito.',
@@ -678,6 +712,7 @@ const refreshToken = async (req, res, next) => {
       return res.status(503).json({ success: false, message: error.message });
     }
     if (error.statusCode && error.statusCode < 500) {
+      if (req.webSession) clearWebSessionCookies(res);
       return res.status(401).json({ success: false, message: 'Refresh token inválido o expirado.' });
     }
     return next(error);
@@ -687,9 +722,30 @@ const refreshToken = async (req, res, next) => {
 const logout = async (req, res, next) => {
   try {
     if (req.authToken) await supabaseAuth.revokeSession(req.authToken);
+    if (req.webSession) clearWebSessionCookies(res);
     return res.json({ success: true, message: 'Sesión cerrada correctamente.' });
   } catch (error) {
+    if (req.webSession) clearWebSessionCookies(res);
     next(error);
+  }
+};
+
+const getWebSession = async (req, res, next) => {
+  try {
+    const user = await getDocument(COLLECTION, req.user.id);
+    if (!user || !['ADMIN_EMPRESA', 'SUPER_ADMIN'].includes(user.rol_codigo)) {
+      clearWebSessionCookies(res);
+      return res.status(403).json({
+        success: false,
+        message: 'Solo las cuentas administrativas pueden acceder al panel web.',
+      });
+    }
+    return res.json({
+      success: true,
+      data: { usuario: await getSessionUser({ ...user, id: req.user.id }) },
+    });
+  } catch (error) {
+    return next(error);
   }
 };
 
@@ -1001,6 +1057,7 @@ const resetPassword = async (req, res, next) => {
 module.exports = {
   forgotPassword,
   googlePassengerAuth,
+  getWebSession,
   login,
   loginWithGoogle,
   logout,

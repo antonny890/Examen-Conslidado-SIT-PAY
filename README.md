@@ -84,7 +84,7 @@ El backend ya no crea cuentas demo con contraseñas conocidas. El primer `SUPER_
    SUPABASE_STORAGE_BUCKET=profile-photos
    GOOGLE_CLIENT_ID=tu-id-de-cliente-oauth-web
 
-   # CORS
+   # CORS local. En producción usa solo el origen HTTPS exacto de Vercel.
    CORS_ORIGIN=http://localhost:3000,http://localhost:5173
 
    # Dominios universitarios autorizados (Ley 26271)
@@ -113,6 +113,8 @@ El backend ya no crea cuentas demo con contraseñas conocidas. El primer `SUPER_
    Para habilitar el inicio administrativo con Google, configura un cliente OAuth 2.0 de tipo aplicación web en Google Cloud Console. Copia el mismo Client ID en `backend/.env` como `GOOGLE_CLIENT_ID` y en `web/.env` como `VITE_GOOGLE_CLIENT_ID`; agrega los orígenes autorizados de la web. El botón permite entrar solo con correos ya registrados como `ADMIN_EMPRESA` o `SUPER_ADMIN`; no crea cuentas automáticamente.
 
    La API valida los JWT de Supabase Auth. Mantén `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL` y `MIGO_API_TOKEN` únicamente en el entorno privado del backend. El bucket de fotos debe configurarse como público para servir las URL persistidas por la API; el cliente móvil y web no deben conectarse directamente a PostgreSQL.
+
+   El panel web autentica con cookies `HttpOnly`, `Secure` y `SameSite=Strict`, sin guardar tokens en `localStorage`. En Vercel, configura el directorio raíz del proyecto como `web`; su regla de rewrites envía `/api/*` al backend para mantener las cookies same-site. En el entorno de producción del backend, configura `CORS_ORIGIN` con el origen HTTPS exacto del panel (por ejemplo, `https://tu-panel.vercel.app`), sin localhost ni comodines.
 
 3. **Crear las tablas e inicializar datos**:
    ```bash

@@ -3,31 +3,22 @@
  */
 import axios, { InternalAxiosRequestConfig } from 'axios';
 
-const DEFAULT_API_BASE_URL = 'https://sit-pay-backend.onrender.com/api/v1';
+const DEFAULT_API_BASE_URL = '/api/v1';
 const API_BASE_URL = (
-  import.meta.env.VITE_API_URL?.trim() || DEFAULT_API_BASE_URL
+  import.meta.env.PROD
+    ? DEFAULT_API_BASE_URL
+    : import.meta.env.VITE_API_URL?.trim() || DEFAULT_API_BASE_URL
 ).replace(/\/+$/, '');
 type RetryConfig = InternalAxiosRequestConfig & { _sitPayRetry?: boolean };
-let refreshInProgress: Promise<string | null> | null = null;
+let refreshInProgress: Promise<boolean> | null = null;
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
 });
-
-// Interceptor de petición para inyectar el JWT de Supabase Auth.
-api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('sit_pay_admin_token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
 
 const clearSession = () => {
   localStorage.removeItem('sit_pay_admin_token');
@@ -37,20 +28,12 @@ const clearSession = () => {
   if (window.location.pathname !== '/login') window.location.href = '/login';
 };
 
-const refreshAccessToken = async (): Promise<string | null> => {
-  const refreshToken = localStorage.getItem('sit_pay_admin_refresh_token');
-  if (!refreshToken) return null;
+const refreshAccessToken = async (): Promise<boolean> => {
   if (!refreshInProgress) {
     refreshInProgress = axios
-      .post(`${API_BASE_URL}/auth/refresh`, { refreshToken })
-      .then((response) => {
-        const tokens = response.data?.data?.tokens;
-        if (!tokens?.accessToken || !tokens?.refreshToken) return null;
-        localStorage.setItem('sit_pay_admin_token', tokens.accessToken);
-        localStorage.setItem('sit_pay_admin_refresh_token', tokens.refreshToken);
-        return tokens.accessToken as string;
-      })
-      .catch(() => null)
+      .post(`${API_BASE_URL}/auth/web/refresh`, {}, { withCredentials: true })
+      .then((response) => response.data?.success === true)
+      .catch(() => false)
       .finally(() => {
         refreshInProgress = null;
       });
@@ -63,14 +46,14 @@ api.interceptors.response.use(
   async (error) => {
     const config = error.config as RetryConfig | undefined;
     const isAuthenticationRequest =
-      config?.url?.includes('/auth/login') ||
-      config?.url?.includes('/auth/google') ||
-      config?.url?.includes('/auth/refresh');
+      config?.url?.includes('/auth/web/login') ||
+      config?.url?.includes('/auth/web/google') ||
+      config?.url?.includes('/auth/web/refresh') ||
+      config?.url?.includes('/auth/web/logout');
     if (error.response?.status === 401 && config && !config._sitPayRetry && !isAuthenticationRequest) {
       config._sitPayRetry = true;
-      const accessToken = await refreshAccessToken();
-      if (accessToken) {
-        config.headers.Authorization = `Bearer ${accessToken}`;
+      const refreshed = await refreshAccessToken();
+      if (refreshed) {
         return api.request(config);
       }
       clearSession();
