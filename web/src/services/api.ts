@@ -20,10 +20,6 @@ export const api = axios.create({
 // Interceptor de petición para inyectar el JWT de Supabase Auth.
 api.interceptors.request.use(
   (config) => {
-    if (localStorage.getItem('sit_pay_admin_demo') === 'true') {
-      return Promise.reject(new Error('Las solicitudes al servidor están deshabilitadas en el modo de demostración local.'));
-    }
-
     const token = localStorage.getItem('sit_pay_admin_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -37,6 +33,7 @@ const clearSession = () => {
   localStorage.removeItem('sit_pay_admin_token');
   localStorage.removeItem('sit_pay_admin_refresh_token');
   localStorage.removeItem('sit_pay_admin_user');
+  localStorage.removeItem('sit_pay_admin_demo');
   if (window.location.pathname !== '/login') window.location.href = '/login';
 };
 
@@ -64,13 +61,12 @@ const refreshAccessToken = async (): Promise<string | null> => {
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const isDemoMode = localStorage.getItem('sit_pay_admin_demo') === 'true';
     const config = error.config as RetryConfig | undefined;
     const isAuthenticationRequest =
       config?.url?.includes('/auth/login') ||
       config?.url?.includes('/auth/google') ||
       config?.url?.includes('/auth/refresh');
-    if (!isDemoMode && error.response?.status === 401 && config && !config._sitPayRetry && !isAuthenticationRequest) {
+    if (error.response?.status === 401 && config && !config._sitPayRetry && !isAuthenticationRequest) {
       config._sitPayRetry = true;
       const accessToken = await refreshAccessToken();
       if (accessToken) {

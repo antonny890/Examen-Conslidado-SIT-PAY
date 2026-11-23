@@ -20,7 +20,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 
 export const AdminLayout: React.FC = () => {
-  const { user, logout, isSuperAdmin, isDemoMode } = useAuth();
+  const { user, logout, isSuperAdmin } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [darkMode, setDarkMode] = useState(true);
@@ -170,11 +170,6 @@ export const AdminLayout: React.FC = () => {
             <span className="text-xs text-slate-400 hidden sm:inline">
               Panel administrativo SIT-Pay
             </span>
-            {isDemoMode && (
-              <span className="text-[10px] font-bold px-2 py-1 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30">
-                DEMO LOCAL · SIN BD · CAMBIOS NO GUARDADOS
-              </span>
-            )}
           </div>
 
           <div className="flex items-center gap-4">

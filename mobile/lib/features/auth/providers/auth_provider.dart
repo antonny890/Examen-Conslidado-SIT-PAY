@@ -203,33 +203,6 @@ class AuthProvider extends ChangeNotifier {
     await SecureStorageService.saveUserData(jsonEncode(_currentUser!.toJson()));
   }
 
-  void loginDemo({required bool asDriver}) {
-    _errorMessage = null;
-    _pendingRegistrationEmail = null;
-    _isDemoMode = true;
-    _currentUser = UserModel(
-      id: asDriver ? 'demo-driver' : 'demo-passenger',
-      email:
-          asDriver ? 'chofer.demo@sitpay.local' : 'usuario.demo@sitpay.local',
-      rol: asDriver ? 'CHOFER' : 'PASAJERO',
-      nombres: asDriver ? 'Carlos' : 'Pedro',
-      apellidos: asDriver ? 'Chofer (demostración)' : 'Usuario (demostración)',
-      choferInfo: asDriver
-          ? DriverVehicleInfo(
-              choferId: 'demo-driver',
-              vehiculoId: 'demo-vehicle-1',
-              placa: 'V7A-890',
-              qrCodigoSeguro: 'SIT-VEH-V7A890-DEMO',
-              empresaId: 'demo-company-1',
-              empresaNombre: 'Transcayma',
-              unidadCodigo: 'C3',
-              unidadNombre: 'Cayma',
-            )
-          : null,
-    );
-    notifyListeners();
-  }
-
   // 3. Registro de Pasajero con Consentimiento Ley 29733
   Future<bool> registerPassenger({
     required String email,

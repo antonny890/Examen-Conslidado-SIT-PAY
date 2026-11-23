@@ -41,58 +41,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const savedUser = localStorage.getItem('sit_pay_admin_user');
     const savedDemoMode = localStorage.getItem('sit_pay_admin_demo') === 'true';
 
-    if (savedUser && (savedToken || (import.meta.env.DEV && savedDemoMode))) {
+    if (savedDemoMode) {
+      localStorage.removeItem('sit_pay_admin_token');
+      localStorage.removeItem('sit_pay_admin_refresh_token');
+      localStorage.removeItem('sit_pay_admin_user');
+      localStorage.removeItem('sit_pay_admin_demo');
+    } else if (savedUser && savedToken) {
       try {
         setToken(savedToken);
         setUser(JSON.parse(savedUser));
-        setIsDemoMode(savedDemoMode);
+        setIsDemoMode(false);
       } catch (_) {
         localStorage.removeItem('sit_pay_admin_token');
+        localStorage.removeItem('sit_pay_admin_refresh_token');
         localStorage.removeItem('sit_pay_admin_user');
-        localStorage.removeItem('sit_pay_admin_demo');
       }
     }
     setIsLoading(false);
   }, []);
 
   const login = async (email: string, password: string) => {
-    const demoAccounts: Record<string, User> = {
-      'admin.transcayma@sitpay.gob.pe': {
-        id: 'demo-admin-empresa',
-        email,
-        rol: 'ADMIN_EMPRESA',
-        rolNombre: 'Administrador de Empresa (Demo)',
-        nombres: 'Gabriela Torres',
-        apellidos: 'Valdivia',
-        empresaId: 'demo-company-transcayma',
-        empresaNombre: 'Transcayma S.A.',
-        empresaActiva: true,
-        estado: 'ACTIVO',
-        emailVerificado: true,
-      },
-      'superadmin@sitpay.gob.pe': {
-        id: 'demo-super-admin',
-        email,
-        rol: 'SUPER_ADMIN',
-        rolNombre: 'Super Administrador (Demo)',
-        nombres: 'Hernán Peralta',
-        apellidos: 'Mendoza',
-        estado: 'ACTIVO',
-        emailVerificado: true,
-      },
-    };
-
-    if (import.meta.env.DEV && password === 'SitPay2026!' && demoAccounts[email]) {
-      const demoUser = demoAccounts[email];
-      setToken(null);
-      setUser(demoUser);
-      setIsDemoMode(true);
-      localStorage.removeItem('sit_pay_admin_token');
-      localStorage.setItem('sit_pay_admin_user', JSON.stringify(demoUser));
-      localStorage.setItem('sit_pay_admin_demo', 'true');
-      return { success: true };
-    }
-
     try {
       const response = await api.post('/auth/login', { email, password });
       if (response.data.success) {
@@ -165,7 +133,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = () => {
     const accessToken = localStorage.getItem('sit_pay_admin_token');
-    if (accessToken && localStorage.getItem('sit_pay_admin_demo') !== 'true') {
+    if (accessToken) {
       void api.post(
         '/auth/logout',
         {},

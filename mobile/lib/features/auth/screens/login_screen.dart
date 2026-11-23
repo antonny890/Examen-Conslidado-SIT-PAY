@@ -143,22 +143,9 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  void _openDesignPreview({required bool asDriver}) {
-    final auth = Provider.of<AuthProvider>(context, listen: false);
-    auth.loginDemo(asDriver: asDriver);
-
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (_) =>
-            asDriver ? const DriverHomeScreen() : const PassengerHomeScreen(),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final auth = Provider.of<AuthProvider>(context);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       body: SafeArea(
@@ -201,81 +188,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: 32),
-
-                // Accesos locales para revisar la interfaz sin servidor.
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? const Color(0xFF131B2E)
-                        : const Color(0xFFEFF6FF),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: isDark
-                          ? const Color(0xFF1E293B)
-                          : const Color(0xFFBFDBFE),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Vista previa del diseño (sin servidor):',
-                        style: TextStyle(
-                            fontSize: 11, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Elige Usuario o Chofer. No valida credenciales ni registra pagos.',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: isDark ? Colors.white70 : Colors.black54,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              style: OutlinedButton.styleFrom(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 6),
-                                minimumSize: Size.zero,
-                              ),
-                              onPressed: () =>
-                                  _openDesignPreview(asDriver: false),
-                              child: const Text('Usuario',
-                                  style: TextStyle(fontSize: 11)),
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: OutlinedButton(
-                              style: OutlinedButton.styleFrom(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 6),
-                                minimumSize: Size.zero,
-                              ),
-                              onPressed: () =>
-                                  _openDesignPreview(asDriver: true),
-                              child: const Text('Chofer',
-                                  style: TextStyle(fontSize: 11)),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'El acceso de usuario sirve para pasajeros regulares o universitarios; la condición universitaria se validará con el correo institucional.',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: isDark ? Colors.white60 : Colors.black54,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 24),
 
                 // Campo Correo
                 TextFormField(

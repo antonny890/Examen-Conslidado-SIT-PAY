@@ -30,8 +30,8 @@ export const LoginPage: React.FC = () => {
   const googleLoginRef = useRef(loginWithGoogle);
   googleLoginRef.current = loginWithGoogle;
   const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim() || '';
-  const [email, setEmail] = useState('admin.transcayma@sitpay.gob.pe');
-  const [password, setPassword] = useState('SitPay2026!');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -116,23 +116,6 @@ export const LoginPage: React.FC = () => {
     }
   };
 
-  const handleSelectDemo = async (demoEmail: string) => {
-    setEmail(demoEmail);
-    setPassword('SitPay2026!');
-    setError(null);
-    setLoading(true);
-
-    const result = await login(demoEmail, 'SitPay2026!');
-    setLoading(false);
-
-    if (!result.success) {
-      setError(result.message || 'No se pudo abrir la demostración local.');
-      return;
-    }
-
-    navigate(demoEmail === 'superadmin@sitpay.gob.pe' ? '/superadmin/dashboard' : '/admin/dashboard');
-  };
-
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center px-4 py-12 relative overflow-hidden">
       {/* Background radial gradient */}
@@ -152,37 +135,6 @@ export const LoginPage: React.FC = () => {
             Panel de Control Administrativo • Concesionarias y Fiscalización
           </p>
         </div>
-
-        {/* Demo switcher */}
-        <div className="bg-slate-900/80 border border-slate-800 p-3.5 rounded-2xl space-y-2">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-            Acceso de demostración local (sin base de datos):
-          </span>
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            <button
-              type="button"
-              onClick={() => handleSelectDemo('admin.transcayma@sitpay.gob.pe')}
-              className="p-2 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-left transition-colors"
-            >
-              <div className="font-bold text-emerald-400">Admin Empresa</div>
-              <div className="text-[10px] text-slate-400">Transcayma S.A.</div>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSelectDemo('superadmin@sitpay.gob.pe')}
-              className="p-2 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-left transition-colors"
-            >
-              <div className="font-bold text-purple-400">Super Admin</div>
-              <div className="text-[10px] text-slate-400">Fiscalización Global</div>
-            </button>
-          </div>
-        </div>
-
-        {import.meta.env.DEV && (
-          <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs text-amber-200">
-            Modo de desarrollo: usa uno de los accesos rápidos para recorrer la interfaz. No valida credenciales reales ni guarda cambios en el servidor.
-          </div>
-        )}
 
         {/* Form Card */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 space-y-6 shadow-2xl">
@@ -263,9 +215,6 @@ export const LoginPage: React.FC = () => {
           </form>
         </div>
 
-        <div className="text-center text-xs text-slate-500">
-          Universidad Continental • Programación Web • Proyecto SIT-Pay Arequipa
-        </div>
       </div>
     </div>
   );
