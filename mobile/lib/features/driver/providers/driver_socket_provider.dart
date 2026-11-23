@@ -19,12 +19,15 @@ class DriverSocketProvider extends ChangeNotifier {
   bool _isDemoPreview = false;
   bool _isRefreshingSocket = false;
   bool _socketRefreshAttempted = false;
+  bool _isLoadingRecentPayments = false;
+  Timer? _recentPaymentRefreshTimer;
+  String? _recentPaymentsError;
 
   // Notificación activa de pantalla verde
   Map<String, dynamic>? _activePaymentAlert;
   Timer? _alertTimer;
 
-  // Historial del turno (solo nombre y hora)
+  // Pagos recientes de la unidad (solo alias y hora).
   final List<Map<String, String>> _turnHistory = [];
   int _turnPaymentCount = 0;
 
@@ -34,15 +37,19 @@ class DriverSocketProvider extends ChangeNotifier {
   Map<String, dynamic>? get activePaymentAlert => _activePaymentAlert;
   List<Map<String, String>> get turnHistory => _turnHistory;
   int get turnPaymentCount => _turnPaymentCount;
+  String? get recentPaymentsError => _recentPaymentsError;
 
   void initializeDemoDriver({
     required String placa,
     required String qrCodigoSeguro,
   }) {
+    _recentPaymentRefreshTimer?.cancel();
+    _recentPaymentRefreshTimer = null;
     _isDemoPreview = true;
     _isConnected = false;
     _turnHistory.clear();
     _turnPaymentCount = 0;
+    _recentPaymentsError = null;
     _currentPlate = placa;
     _qrCode = qrCodigoSeguro;
     notifyListeners();
@@ -50,6 +57,8 @@ class DriverSocketProvider extends ChangeNotifier {
 
   void clearDriverAssignment() {
     _alertTimer?.cancel();
+    _recentPaymentRefreshTimer?.cancel();
+    _recentPaymentRefreshTimer = null;
     final socket = _socket;
     _socket = null;
     socket?.disconnect();
@@ -61,6 +70,7 @@ class DriverSocketProvider extends ChangeNotifier {
     _qrCode = null;
     _turnHistory.clear();
     _turnPaymentCount = 0;
+    _recentPaymentsError = null;
     notifyListeners();
   }
 
@@ -77,6 +87,8 @@ class DriverSocketProvider extends ChangeNotifier {
     _socketRefreshAttempted = false;
     _turnHistory.clear();
     _turnPaymentCount = 0;
+    _recentPaymentsError = null;
+    _recentPaymentRefreshTimer?.cancel();
     _currentPlate = placa;
     _qrCode = qrCodigoSeguro;
 
@@ -87,36 +99,74 @@ class DriverSocketProvider extends ChangeNotifier {
 
     final token = await SecureStorageService.getAccessToken();
 
-    await _loadRecentPayments();
     _connectSocket(token);
+    unawaited(_loadRecentPayments());
+    _recentPaymentRefreshTimer = Timer.periodic(
+      const Duration(seconds: 15),
+      (_) => unawaited(_loadRecentPayments()),
+    );
   }
 
   Future<void> _loadRecentPayments() async {
+    if (_isLoadingRecentPayments) return;
+    _isLoadingRecentPayments = true;
     try {
       final response = await ApiClient().dio.get(
             ApiConstants.driverRecentPayments,
           );
       final responseData = response.data;
-      final payments = responseData is Map && responseData['data'] is List
-          ? responseData['data'] as List
+      final data = responseData is Map ? responseData['data'] : null;
+      final payments = data is Map && data['pagos'] is List
+          ? data['pagos'] as List
           : const [];
+      final mergedByCode = <String, Map<String, String>>{};
+
+      for (final payment in _turnHistory) {
+        final code = payment['codigoBoleta'];
+        if (code != null && code.isNotEmpty) mergedByCode[code] = payment;
+      }
+
+      for (final payment in payments.whereType<Map>()) {
+        final alias = payment['pasajeroAlias'];
+        final code = payment['codigoBoleta']?.toString() ?? '';
+        if (code.isEmpty) continue;
+
+        final entry = {
+          'nombre': alias is String && alias.trim().isNotEmpty
+              ? alias.trim()
+              : 'Pasajero',
+          'alias': alias is String ? alias.trim() : '',
+          'hora': payment['hora'] is String ? payment['hora'] as String : '',
+          'simulado': payment['simulado'] == true ? 'true' : 'false',
+          'codigoBoleta': code,
+          'fechaPago': payment['fechaPago']?.toString() ?? '',
+        };
+        mergedByCode[code] = entry;
+      }
+
+      final merged = mergedByCode.values.toList()
+        ..sort((left, right) {
+          final leftDate =
+              DateTime.tryParse(left['fechaPago'] ?? '') ?? DateTime(1970);
+          final rightDate =
+              DateTime.tryParse(right['fechaPago'] ?? '') ?? DateTime(1970);
+          return rightDate.compareTo(leftDate);
+        });
       _turnHistory
         ..clear()
-        ..addAll(payments.whereType<Map>().map((payment) {
-          final alias = payment['pasajeroAlias'];
-          return {
-            'nombre': alias is String && alias.trim().isNotEmpty
-                ? alias.trim()
-                : 'Pasajero',
-            'alias': alias is String ? alias.trim() : '',
-            'hora': payment['hora'] is String ? payment['hora'] as String : '',
-            'simulado': payment['simulado'] == true ? 'true' : 'false',
-          };
-        }));
-      _turnPaymentCount = _turnHistory.length;
+        ..addAll(merged.take(8));
+      final total = data is Map ? data['total'] : null;
+      if (total is num && total.toInt() > _turnPaymentCount) {
+        _turnPaymentCount = total.toInt();
+      }
+      _recentPaymentsError = null;
       notifyListeners();
     } catch (error) {
       debugPrint('[Driver Payments] No se pudo cargar el historial: $error');
+      _recentPaymentsError = 'No se pudo actualizar el historial de pagos.';
+      notifyListeners();
+    } finally {
+      _isLoadingRecentPayments = false;
     }
   }
 
@@ -178,6 +228,7 @@ class DriverSocketProvider extends ChangeNotifier {
 
   void _handlePaymentReceived(dynamic data) {
     final Map<String, dynamic> payload = Map<String, dynamic>.from(data);
+    if (!_recordTurnPayment(payload)) return;
     final alias = payload['pasajeroAlias'];
     final isSimulated = payload['simulado'] == true;
     final pasajeroNombre =
@@ -196,16 +247,6 @@ class DriverSocketProvider extends ChangeNotifier {
       'hora': hora,
     };
 
-    // Agregar a lista de histórico del turno
-    _turnHistory.insert(0, {
-      'nombre': pasajeroNombre,
-      'alias': alias is String ? alias.trim() : '',
-      'hora': hora,
-      'simulado': isSimulated ? 'true' : 'false',
-    });
-    _turnPaymentCount++;
-    if (_turnHistory.length > 8) _turnHistory.removeLast();
-
     notifyListeners();
 
     // Reproducir tono sonoro de confirmación
@@ -221,9 +262,39 @@ class DriverSocketProvider extends ChangeNotifier {
     });
   }
 
+  bool _recordTurnPayment(Map<String, dynamic> payload) {
+    final ticketCode = payload['codigoBoleta']?.toString() ?? '';
+    if (ticketCode.isNotEmpty &&
+        _turnHistory.any((payment) => payment['codigoBoleta'] == ticketCode)) {
+      return false;
+    }
+
+    final alias = payload['pasajeroAlias'];
+    final isSimulated = payload['simulado'] == true;
+    final pasajeroNombre =
+        alias is String && alias.trim().isNotEmpty ? alias.trim() : 'Pasajero';
+    final hour = payload['hora'];
+    final time = hour is String
+        ? hour
+        : DateTime.now().toString().split(' ')[1].substring(0, 5);
+    _turnHistory.insert(0, {
+      'nombre': pasajeroNombre,
+      'alias': alias is String ? alias.trim() : '',
+      'hora': time,
+      'simulado': isSimulated ? 'true' : 'false',
+      'codigoBoleta': ticketCode,
+      'fechaPago': payload['timestamp']?.toString() ?? '',
+    });
+    _turnPaymentCount++;
+    if (_turnHistory.length > 8) _turnHistory.removeLast();
+    return true;
+  }
+
   // Desconectar al salir de la pantalla
   void disposeSocket() {
     _alertTimer?.cancel();
+    _recentPaymentRefreshTimer?.cancel();
+    _recentPaymentRefreshTimer = null;
     final socket = _socket;
     _socket = null;
     socket?.disconnect();
@@ -233,5 +304,16 @@ class DriverSocketProvider extends ChangeNotifier {
         WakelockPlus.disable();
       } catch (_) {}
     }
+  }
+
+  @override
+  void dispose() {
+    _recentPaymentRefreshTimer?.cancel();
+    _alertTimer?.cancel();
+    final socket = _socket;
+    _socket = null;
+    socket?.disconnect();
+    socket?.dispose();
+    super.dispose();
   }
 }

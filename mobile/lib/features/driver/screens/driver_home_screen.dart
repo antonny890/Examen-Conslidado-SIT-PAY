@@ -276,7 +276,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'Últimos pagos registrados',
+                            'Pagos registrados de esta unidad',
                             style: TextStyle(
                               color: primaryTextColor,
                               fontSize: 12,
@@ -432,7 +432,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
-                                'ÚLTIMOS PAGOS DEL TURNO',
+                                'ÚLTIMOS PAGOS DE LA UNIDAD',
                                 style: TextStyle(
                                   color: secondaryTextColor,
                                   fontSize: 11,
@@ -450,6 +450,16 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                             ],
                           ),
                           const SizedBox(height: 10),
+                          if (driverSocket.recentPaymentsError != null) ...[
+                            Text(
+                              driverSocket.recentPaymentsError!,
+                              style: TextStyle(
+                                color: theme.colorScheme.error,
+                                fontSize: 11,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                          ],
                           Expanded(
                             child: driverSocket.turnHistory.isEmpty
                                 ? Center(

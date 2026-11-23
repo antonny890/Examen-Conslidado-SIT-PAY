@@ -70,12 +70,16 @@ const previewPayment = async (req, res, next) => {
 
 const getDriverRecentPayments = async (req, res, next) => {
   try {
-    const transactions = (await queryCollection(
-      'transacciones',
-      'chofer_usuario_id',
-      '==',
-      req.user.id,
-    ))
+    const assignments = await queryCollection('choferes', 'usuario_id', '==', req.user.id);
+    const vehicleId = assignments.find((assignment) => assignment.vehiculo_id)?.vehiculo_id;
+    if (!vehicleId) {
+      return res.status(404).json({
+        success: false,
+        message: 'No hay un vehículo asignado a este chofer.',
+      });
+    }
+
+    const transactions = (await queryCollection('transacciones', 'vehiculo_id', '==', vehicleId))
       .filter((record) => record.estado === 'EXITOSA')
       .sort((left, right) =>
         (timestampToDate(right.fecha_pago)?.getTime() || 0) -
@@ -92,9 +96,14 @@ const getDriverRecentPayments = async (req, res, next) => {
           })
           : '',
         simulado: record.pago_simulado === true,
+        codigoBoleta: record.codigo_boleta,
+        fechaPago: paidAt?.toISOString() || null,
       };
     }));
-    return res.json({ success: true, data: recent });
+    return res.json({
+      success: true,
+      data: { total: transactions.length, pagos: recent },
+    });
   } catch (error) {
     return next(error);
   }

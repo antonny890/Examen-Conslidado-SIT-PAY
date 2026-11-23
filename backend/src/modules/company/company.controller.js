@@ -10,6 +10,7 @@ const {
   deleteUserAccount,
   findUserByEmail,
 } = require('../../services/userService');
+const { dateKeyInPeru } = require('../../utils/dateKeyInPeru');
 
 const companyForAdmin = async (userId) => {
   const companies = await queryCollection('empresas', 'admin_usuario_id', '==', userId);
@@ -47,13 +48,13 @@ const getCompanyDashboard = async (req, res, next) => {
     ]);
     const successful = successfulTransactions(transactions);
     const verified = verifiedTransactions(successful);
-    const today = new Date().toISOString().slice(0, 10);
+    const today = dateKeyInPeru(new Date());
     const todayPayments = verified.filter((transaction) =>
-      timestampToDate(transaction.fecha_pago)?.toISOString().slice(0, 10) === today,
+      dateKeyInPeru(transaction.fecha_pago) === today,
     );
     const todaySimulatedPayments = successful.filter((transaction) =>
       transaction.pago_simulado === true &&
-      timestampToDate(transaction.fecha_pago)?.toISOString().slice(0, 10) === today,
+      dateKeyInPeru(transaction.fecha_pago) === today,
     );
     const recent = await Promise.all(successful.sort(newestFirst).slice(0, 10).map(async (transaction) => {
       const vehicle = await getDocument('vehiculos', transaction.vehiculo_id);
@@ -235,10 +236,10 @@ const getReportTransactions = async (req, limit = 1000) => {
     .filter((record) => record.estado === 'EXITOSA');
   if (targetCompanyId) transactions = transactions.filter((record) => record.empresa_id === targetCompanyId);
   if (fechaInicio) transactions = transactions.filter((record) =>
-    timestampToDate(record.fecha_pago)?.toISOString().slice(0, 10) >= fechaInicio,
+    (dateKeyInPeru(record.fecha_pago) || '') >= fechaInicio,
   );
   if (fechaFin) transactions = transactions.filter((record) =>
-    timestampToDate(record.fecha_pago)?.toISOString().slice(0, 10) <= fechaFin,
+    (dateKeyInPeru(record.fecha_pago) || '') <= fechaFin,
   );
   transactions.sort(newestFirst);
   return Promise.all(transactions.slice(0, limit).map(async (transaction) => {
