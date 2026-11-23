@@ -481,16 +481,20 @@ SIT-Pay no almacena dinero ni mantiene saldos. Los pagos de esta versión son si
         tags: ['Medio Pasaje (Ley 26271)'],
         summary: 'Consultar estado actual de acreditación preferencial del pasajero',
         security: [{ BearerAuth: [] }],
-        responses: { 200: { description: 'Estado: SIN_SOLICITUD, PENDIENTE, APROBADA o VENCIDA' } },
+        responses: { 200: { description: 'Incluye acreditación automática cuando el correo institucional de acceso está verificado; de lo contrario, informa SIN_SOLICITUD, PENDIENTE, APROBADA o VENCIDA' } },
       },
     },
     '/preferential/request-email': {
       post: {
         tags: ['Medio Pasaje (Ley 26271)'],
-        summary: 'Solicitar medio pasaje mediante correo institucional (.edu.pe)',
+        summary: 'Solicitar acreditación con correo institucional para cuentas con correo de acceso normal',
         security: [{ BearerAuth: [] }],
         requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/PreferentialEmailRequest' } } } },
-        responses: { 200: { description: 'Código OTP simulado enviado' } },
+        responses: {
+          200: { description: 'Código OTP enviado para confirmar el correo institucional' },
+          400: { description: 'Correo o institución inválidos, o dominio no autorizado' },
+          503: { description: 'Servicio de correo institucional no configurado' },
+        },
       },
     },
     '/tickets': {

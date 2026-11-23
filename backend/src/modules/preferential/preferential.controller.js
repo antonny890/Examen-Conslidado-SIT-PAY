@@ -2,17 +2,17 @@ const crypto = require('node:crypto');
 const {
   createDocument,
   db,
+  getDocument,
   queryCollection,
   timestampToDate,
   writeNotification,
 } = require('../../services/postgresData');
 const { sendInstitutionalVerificationCode } = require('../../services/emailService');
 const { dateKeyInPeru } = require('../../utils/dateKeyInPeru');
-
-const ALLOWED_DOMAINS = (process.env.ALLOWED_EDU_DOMAINS || 'continental.edu.pe,unsa.edu.pe,ucsm.edu.pe,utp.edu.pe')
-  .split(',')
-  .map((domain) => domain.trim().toLowerCase())
-  .filter(Boolean);
+const {
+  getVerifiedInstitutionalEmail,
+  isInstitutionalEmailAddress,
+} = require('../../utils/institutionalEmail');
 
 const requestByEmail = async (req, res, next) => {
   try {
@@ -27,12 +27,10 @@ const requestByEmail = async (req, res, next) => {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
-    const domain = normalizedEmail.split('@')[1] || '';
-    if (normalizedEmail.length > 150 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) ||
-        (!domain.endsWith('.edu.pe') && !ALLOWED_DOMAINS.includes(domain))) {
+    if (!isInstitutionalEmailAddress(normalizedEmail)) {
       return res.status(400).json({
         success: false,
-        message: `El correo debe pertenecer a un dominio educativo autorizado (.edu.pe o listado autorizado: ${ALLOWED_DOMAINS.join(', ')}).`,
+        message: 'El correo debe pertenecer a un dominio educativo autorizado (.edu.pe o listado autorizado).',
       });
     }
 
@@ -137,11 +135,30 @@ const verifyEmailCode = async (req, res, next) => {
 
 const getPassengerStatus = async (req, res, next) => {
   try {
-    const requests = (await queryCollection('solicitudes_preferenciales', 'usuario_id', '==', req.user.id))
-      .sort((left, right) =>
-        (timestampToDate(right.created_at)?.getTime() || 0) -
-        (timestampToDate(left.created_at)?.getTime() || 0),
-      );
+    const [requestRecords, user] = await Promise.all([
+      queryCollection('solicitudes_preferenciales', 'usuario_id', '==', req.user.id),
+      getDocument('usuarios', req.user.id),
+    ]);
+    const requests = requestRecords.sort((left, right) =>
+      (timestampToDate(right.created_at)?.getTime() || 0) -
+      (timestampToDate(left.created_at)?.getTime() || 0),
+    );
+    const institutionalEmail = getVerifiedInstitutionalEmail(user);
+    if (institutionalEmail) {
+      return res.json({
+        success: true,
+        data: {
+          estado: 'APROBADA',
+          tipoPreferencial: 'UNIVERSITARIA',
+          institucion: institutionalEmail.institution,
+          correoInstitucional: institutionalEmail.email,
+          metodo: 'CORREO_CUENTA_VERIFICADO',
+          esMedioPasajeActivo: true,
+          acreditacionAutomatica: true,
+        },
+      });
+    }
+
     const request = requests[0];
     if (!request) {
       return res.json({

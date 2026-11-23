@@ -1,6 +1,11 @@
-const { listCollection, queryCollection, timestampToDate } = require('./postgresData');
+const {
+  getDocument,
+  queryCollection,
+  timestampToDate,
+} = require('./postgresData');
 const { dateKeyInPeru } = require('../utils/dateKeyInPeru');
 const { dateTimePartsInPeru } = require('../utils/dateTimeInPeru');
+const { getVerifiedInstitutionalEmail } = require('../utils/institutionalEmail');
 
 const newestFirst = (left, right) => {
   const leftDate = timestampToDate(left.created_at)?.getTime() || 0;
@@ -26,11 +31,14 @@ const calculateApplicableFare = async (passengerId, customDate = new Date()) => 
   const normalFare = activeFares.find((fare) => fare.tipo_pasajero === 'NORMAL');
   if (!normalFare) throw new Error('No se encontró una tarifa normal configurada en el sistema.');
 
-  const preferences = (await queryCollection('solicitudes_preferenciales', 'usuario_id', '==', passengerId))
+  const [preferences, user] = await Promise.all([
+    queryCollection('solicitudes_preferenciales', 'usuario_id', '==', passengerId),
+    getDocument('usuarios', passengerId),
+  ]);
+  const accreditation = preferences
     .filter((request) => request.estado === 'APROBADA')
     .filter((request) => !request.fecha_vencimiento || request.fecha_vencimiento >= today)
-    .sort(newestFirst);
-  const accreditation = preferences[0];
+    .sort(newestFirst)[0] || getVerifiedInstitutionalEmail(user);
   if (!accreditation) {
     return {
       tarifaId: normalFare.id,

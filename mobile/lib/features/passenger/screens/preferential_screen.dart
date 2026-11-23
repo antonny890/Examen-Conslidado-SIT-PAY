@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/network/api_client.dart';
@@ -22,6 +23,28 @@ class _PreferentialScreenState extends State<PreferentialScreen> {
 
   bool _otpSent = false;
   bool _isSubmitting = false;
+
+  String _sendCodeErrorMessage(Object error) {
+    if (error is DioException) {
+      final statusCode = error.response?.statusCode;
+      final responseData = error.response?.data;
+      final responseMessage =
+          responseData is Map ? responseData['message'] : null;
+
+      if (statusCode != null && statusCode < 500 &&
+          responseMessage is String && responseMessage.trim().isNotEmpty) {
+        return responseMessage;
+      }
+      if (statusCode == 503) {
+        return 'El correo es válido, pero el servidor de verificación no está configurado. Contacta al administrador.';
+      }
+      if (error.response == null) {
+        return 'No se pudo conectar con el servidor. Verifica tu conexión e inténtalo nuevamente.';
+      }
+    }
+
+    return 'El correo es válido, pero no se pudo enviar el código. Intenta más tarde o contacta al administrador.';
+  }
 
   @override
   void initState() {
@@ -96,9 +119,7 @@ class _PreferentialScreenState extends State<PreferentialScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content:
-                Text('Error al enviar el código. Verifique que sea .edu.pe.')),
+        SnackBar(content: Text(_sendCodeErrorMessage(e))),
       );
     } finally {
       if (mounted) setState(() => _isSubmitting = false);

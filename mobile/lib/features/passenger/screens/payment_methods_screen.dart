@@ -167,26 +167,6 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.tertiaryContainer,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: const Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.info_outline),
-                SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Prototipo: solo acepta tarjetas ficticias que comiencen con 9999. No ingreses datos de una tarjeta real. El número completo y el CVV no se guardan y no se realizan cargos.',
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
           Text('Mis tarjetas de prueba', style: theme.textTheme.titleMedium),
           const SizedBox(height: 8),
           if (_isLoading)

@@ -361,7 +361,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   keyboardType: TextInputType.emailAddress,
                   readOnly: widget.googleSignInResult != null,
                   decoration: const InputDecoration(
-                      labelText: 'Correo Electrónico',
+                      labelText: 'Correo personal o institucional',
+                      helperText:
+                          'Con correo institucional verificado se habilita la tarifa universitaria.',
                       prefixIcon: Icon(Icons.email_outlined)),
                   validator: (v) => v == null || !v.contains('@')
                       ? 'Correo no válido.'
