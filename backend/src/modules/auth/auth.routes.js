@@ -7,12 +7,6 @@ const authController = require('./auth.controller');
 const dniController = require('./dni.controller');
 const authenticateAccessToken = require('../../middlewares/auth');
 const { authLimiter } = require('../../middlewares/rateLimiter');
-const { requireTrustedOrigin } = require('../../middlewares/webSessionCsrf');
-
-const markWebSession = (req, res, next) => {
-  req.webSession = true;
-  return next();
-};
 
 router.post('/register', authLimiter, authController.registerPassenger);
 router.post('/lookup-dni', authLimiter, dniController.lookupDni);
@@ -24,11 +18,6 @@ router.post('/google', authLimiter, authController.loginWithGoogle);
 router.post('/google/passenger', authLimiter, authController.googlePassengerAuth);
 router.post('/refresh', authController.refreshToken);
 router.post('/logout', authenticateAccessToken, authController.logout);
-router.post('/web/login', authLimiter, requireTrustedOrigin, markWebSession, authController.login);
-router.post('/web/google', authLimiter, requireTrustedOrigin, markWebSession, authController.loginWithGoogle);
-router.post('/web/refresh', authLimiter, requireTrustedOrigin, markWebSession, authController.refreshToken);
-router.post('/web/logout', requireTrustedOrigin, markWebSession, authenticateAccessToken, authController.logout);
-router.get('/web/session', authenticateAccessToken, authController.getWebSession);
 router.post('/forgot-password', authLimiter, authController.forgotPassword);
 router.post('/reset-password', authLimiter, authController.resetPassword);
 

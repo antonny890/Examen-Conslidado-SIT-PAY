@@ -1,19 +1,16 @@
 const { verifyAccessToken } = require('../services/supabaseAuthService');
 const { getDocument } = require('../services/postgresData');
-const { getAccessTokenCookie } = require('../utils/webSessionCookies');
 
 const authenticateAccessToken = async (req, res, next) => {
   const authorization = req.headers.authorization;
-  const token = authorization?.startsWith('Bearer ')
-    ? authorization.slice('Bearer '.length)
-    : getAccessTokenCookie(req);
-  if (!token) {
+  if (!authorization || !authorization.startsWith('Bearer ')) {
     return res.status(401).json({
       success: false,
       message: 'Acceso no autorizado. Se requiere un token de acceso.',
     });
   }
 
+  const token = authorization.slice('Bearer '.length);
   let decoded;
   try {
     decoded = await verifyAccessToken(token);

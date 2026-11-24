@@ -5,12 +5,9 @@ if (!connectionString) {
   throw new Error('DATABASE_URL no está configurado para conectar con PostgreSQL.');
 }
 
-const sslDisabled = process.env.DATABASE_SSL === 'false';
-if (process.env.NODE_ENV === 'production' && sslDisabled) {
-  throw new Error('DATABASE_SSL no puede desactivarse en producción.');
-}
-
-const ssl = sslDisabled ? false : { rejectUnauthorized: true };
+const ssl = process.env.DATABASE_SSL === 'false'
+  ? false
+  : { rejectUnauthorized: false };
 
 const db = knexFactory({
   client: 'pg',

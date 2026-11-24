@@ -15,16 +15,6 @@ The Android package name is currently `com.example.sit_pay_mobile` in
 `android/app/build.gradle.kts`. Register each signing certificate's SHA-1 with
 Google Cloud Console. Do not commit credentials or local environment files.
 
-Release builds require a private release keystore; they no longer fall back to
-the debug signing key. Provide these values through Gradle properties or
-environment variables, keeping the keystore and passwords outside the
-repository:
-
-- `SITPAY_RELEASE_STORE_FILE`
-- `SITPAY_RELEASE_STORE_PASSWORD`
-- `SITPAY_RELEASE_KEY_ALIAS`
-- `SITPAY_RELEASE_KEY_PASSWORD`
-
 The backend validates the Google ID token before login or account creation.
 New passenger accounts must still accept the data and DNI-query consents,
 verify their DNI, may provide a phone number, and complete the app's local

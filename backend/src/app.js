@@ -2,19 +2,16 @@
  * Aplicación Principal Express + HTTP Server + Socket.IO (SIT-Pay Arequipa)
  * Backend sin estado (stateless) para consumo simultáneo de Mobile (Flutter) y Web (React)
  */
-require('dotenv').config();
-
 const express = require('express');
 const http = require('http');
 const cors = require('cors');
 const helmet = require('helmet');
 const { Server } = require('socket.io');
 const swaggerUi = require('swagger-ui-express');
+require('dotenv').config();
 
 const swaggerSpec = require('./config/swagger');
-const { corsOrigin } = require('./config/origins');
 const errorHandler = require('./middlewares/errorHandler');
-const { protectWebSessionRequests } = require('./middlewares/webSessionCsrf');
 const { initializeSocket } = require('./sockets/socketHandler');
 
 // Rutas modulares
@@ -33,7 +30,38 @@ const adminRoutes = require('./modules/admin/admin.routes');
 const app = express();
 app.set('trust proxy', 1);
 const server = http.createServer(app);
-const isProduction = process.env.NODE_ENV === 'production';
+const allowedOrigins = [
+  ...(process.env.CORS_ORIGIN || 'http://localhost:3000,http://localhost:5173')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+  ...(process.env.RENDER_EXTERNAL_URL ? [process.env.RENDER_EXTERNAL_URL.replace(/\/$/, '')] : []),
+];
+const isLocalDevelopmentOrigin = (origin) => {
+  try {
+    const url = new URL(origin);
+    return (
+      ['http:', 'https:'].includes(url.protocol) &&
+      ['localhost', '127.0.0.1'].includes(url.hostname) &&
+      (!url.port || (Number(url.port) >= 1 && Number(url.port) <= 65535)) &&
+      url.pathname === '/' &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash
+    );
+  } catch {
+    return false;
+  }
+};
+const corsOrigin = (origin, callback) => {
+  if (!origin || allowedOrigins.includes(origin) || isLocalDevelopmentOrigin(origin)) {
+    return callback(null, true);
+  }
+  const error = new Error('El origen no está permitido por la política CORS.');
+  error.statusCode = 403;
+  return callback(error);
+};
 
 // 1. Configuración de Socket.IO
 const io = new Server(server, {
@@ -45,21 +73,12 @@ const io = new Server(server, {
 });
 initializeSocket(io);
 
-// Swagger UI is available only in development; its inline assets need a relaxed CSP.
-if (!isProduction) {
-  app.use(
-    '/api/docs',
-    helmet({ contentSecurityPolicy: false }),
-    swaggerUi.serve,
-    swaggerUi.setup(swaggerSpec, {
-      customSiteTitle: 'SIT-Pay Arequipa — Swagger API Docs',
-      customCss: '.swagger-ui .topbar { display: none }',
-    })
-  );
-}
-
 // 2. Middlewares de Seguridad y Red
-app.use(helmet());
+app.use(
+  helmet({
+    contentSecurityPolicy: false, // Permitir Swagger UI
+  })
+);
 
 app.use(
   cors({
@@ -67,10 +86,19 @@ app.use(
     credentials: true,
   })
 );
-app.use(protectWebSessionRequests);
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// 3. Documentación Swagger UI en /api/docs
+app.use(
+  '/api/docs',
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerSpec, {
+    customSiteTitle: 'SIT-Pay Arequipa — Swagger API Docs',
+    customCss: '.swagger-ui .topbar { display: none }',
+  })
+);
 
 // 4. Endpoint de Salud / Estado del Servicio
 app.get('/api/health', (req, res) => {

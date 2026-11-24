@@ -54,7 +54,8 @@ export const LoginPage: React.FC = () => {
             setError(result.message || 'No se pudo iniciar sesión con Google.');
             return;
           }
-          navigate(result.user?.rol === 'SUPER_ADMIN' ? '/superadmin/dashboard' : '/admin/dashboard');
+          const storedUser = JSON.parse(localStorage.getItem('sit_pay_admin_user') || '{}');
+          navigate(storedUser.rol === 'SUPER_ADMIN' ? '/superadmin/dashboard' : '/admin/dashboard');
         },
       });
       googleButtonRef.current.replaceChildren();
@@ -103,7 +104,9 @@ export const LoginPage: React.FC = () => {
     setLoading(false);
 
     if (result.success) {
-      if (result.user?.rol === 'SUPER_ADMIN') {
+      // Redirigir según rol
+      const storedUser = JSON.parse(localStorage.getItem('sit_pay_admin_user') || '{}');
+      if (storedUser.rol === 'SUPER_ADMIN') {
         navigate('/superadmin/dashboard');
       } else {
         navigate('/admin/dashboard');

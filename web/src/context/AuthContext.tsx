@@ -18,10 +18,11 @@ export interface User {
 
 interface AuthContextType {
   user: User | null;
+  token: string | null;
   isLoading: boolean;
   isDemoMode: boolean;
-  login: (email: string, pass: string) => Promise<{ success: boolean; message?: string; user?: User }>;
-  loginWithGoogle: (credential: string) => Promise<{ success: boolean; message?: string; user?: User }>;
+  login: (email: string, pass: string) => Promise<{ success: boolean; message?: string }>;
+  loginWithGoogle: (credential: string) => Promise<{ success: boolean; message?: string }>;
   logout: () => void;
   isSuperAdmin: boolean;
   isAdminEmpresa: boolean;
@@ -31,46 +32,42 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isDemoMode, setIsDemoMode] = useState(false);
 
   useEffect(() => {
-    localStorage.removeItem('sit_pay_admin_token');
-    localStorage.removeItem('sit_pay_admin_refresh_token');
-    localStorage.removeItem('sit_pay_admin_user');
-    localStorage.removeItem('sit_pay_admin_demo');
+    const savedToken = localStorage.getItem('sit_pay_admin_token');
+    const savedUser = localStorage.getItem('sit_pay_admin_user');
+    const savedDemoMode = localStorage.getItem('sit_pay_admin_demo') === 'true';
 
-    let active = true;
-    const restoreSession = async () => {
+    if (savedDemoMode) {
+      localStorage.removeItem('sit_pay_admin_token');
+      localStorage.removeItem('sit_pay_admin_refresh_token');
+      localStorage.removeItem('sit_pay_admin_user');
+      localStorage.removeItem('sit_pay_admin_demo');
+    } else if (savedUser && savedToken) {
       try {
-        const response = await api.get('/auth/web/session');
-        const restoredUser = response.data?.data?.usuario as User | undefined;
-        if (
-          active &&
-          restoredUser &&
-          ['SUPER_ADMIN', 'ADMIN_EMPRESA'].includes(restoredUser.rol)
-        ) {
-          setUser(restoredUser);
-        }
-      } catch {
-        if (active) setUser(null);
-      } finally {
-        if (active) setIsLoading(false);
+        setToken(savedToken);
+        setUser(JSON.parse(savedUser));
+        setIsDemoMode(false);
+      } catch (_) {
+        localStorage.removeItem('sit_pay_admin_token');
+        localStorage.removeItem('sit_pay_admin_refresh_token');
+        localStorage.removeItem('sit_pay_admin_user');
       }
-    };
-    void restoreSession();
-    return () => {
-      active = false;
-    };
+    }
+    setIsLoading(false);
   }, []);
 
   const login = async (email: string, password: string) => {
     try {
-      const response = await api.post('/auth/web/login', { email, password });
+      const response = await api.post('/auth/login', { email, password });
       if (response.data.success) {
         const data = response.data.data;
         const loggedUser: User = data.usuario;
 
+        // Validar que sea un rol administrativo apto para el panel web
         if (loggedUser.rol !== 'SUPER_ADMIN' && loggedUser.rol !== 'ADMIN_EMPRESA') {
           return {
             success: false,
@@ -78,9 +75,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           };
         }
 
+        const accessToken = data.tokens.accessToken;
+        const refreshToken = data.tokens.refreshToken;
+        setToken(accessToken);
         setUser(loggedUser);
         setIsDemoMode(false);
-        return { success: true, user: loggedUser };
+
+        localStorage.setItem('sit_pay_admin_token', accessToken);
+        localStorage.setItem('sit_pay_admin_refresh_token', refreshToken);
+        localStorage.setItem('sit_pay_admin_user', JSON.stringify(loggedUser));
+        localStorage.removeItem('sit_pay_admin_demo');
+
+        return { success: true };
       }
       return { success: false, message: response.data.message || 'Error al iniciar sesión.' };
     } catch (err: any) {
@@ -93,7 +99,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const loginWithGoogle = async (credential: string) => {
     try {
-      const response = await api.post('/auth/web/google', { credential });
+      const response = await api.post('/auth/google', { credential });
       if (!response.data.success) {
         return { success: false, message: response.data.message || 'No se pudo iniciar sesión con Google.' };
       }
@@ -107,9 +113,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
       }
 
+      const accessToken = data.tokens.accessToken;
+      const refreshToken = data.tokens.refreshToken;
+      setToken(accessToken);
       setUser(loggedUser);
       setIsDemoMode(false);
-      return { success: true, user: loggedUser };
+      localStorage.setItem('sit_pay_admin_token', accessToken);
+      localStorage.setItem('sit_pay_admin_refresh_token', refreshToken);
+      localStorage.setItem('sit_pay_admin_user', JSON.stringify(loggedUser));
+      localStorage.removeItem('sit_pay_admin_demo');
+      return { success: true };
     } catch (error: any) {
       return {
         success: false,
@@ -119,7 +132,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = () => {
-    void api.post('/auth/web/logout').catch(() => undefined);
+    const accessToken = localStorage.getItem('sit_pay_admin_token');
+    if (accessToken) {
+      void api.post(
+        '/auth/logout',
+        {},
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+      ).catch(() => undefined);
+    }
+    localStorage.removeItem('sit_pay_admin_token');
+    localStorage.removeItem('sit_pay_admin_refresh_token');
+    localStorage.removeItem('sit_pay_admin_user');
+    localStorage.removeItem('sit_pay_admin_demo');
+    setToken(null);
     setUser(null);
     setIsDemoMode(false);
   };
@@ -128,6 +153,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     <AuthContext.Provider
       value={{
         user,
+        token,
         isLoading,
         isDemoMode,
         login,
